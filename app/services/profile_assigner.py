@@ -50,8 +50,9 @@ class ProfileAssigner:
             if best.observation_count < min_prompts:
                 return False, None, best.average_score
             
-            # Check if accumulated average meets threshold
-            if best.average_score >= cold_threshold:
+            # Check if accumulated average meets threshold AND rank is stable
+            # Per fullplan.txt: average_score >= threshold AND consecutive_top_count >= 2
+            if best.average_score >= cold_threshold and best.consecutive_top_count >= 2:
                 return True, best.profile_id, best.average_score
                 
         elif user_mode == 'DRIFT_FALLBACK':

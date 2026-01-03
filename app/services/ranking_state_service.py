@@ -227,8 +227,15 @@ class RankingStateService:
         drift_type = None
         recommendation = "Continue monitoring"
         
+        # Per fullplan.txt section 8: Check score degradation first
+        DRIFT_CONF_THRESHOLD = 0.50
+        if state.average_score < DRIFT_CONF_THRESHOLD:
+            has_drift = True
+            drift_type = "score_degradation"
+            recommendation = "Profile confidence has degraded significantly - consider fallback"
+        
         # Check for consistent top performance
-        if state.consecutive_top_count >= top_threshold:
+        elif state.consecutive_top_count >= top_threshold:
             has_drift = True
             drift_type = "consistent_top"
             recommendation = "Consider switching to DYNAMIC_ONLY mode"
