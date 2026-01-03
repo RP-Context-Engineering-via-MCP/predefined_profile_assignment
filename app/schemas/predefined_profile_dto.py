@@ -1,14 +1,15 @@
 # app/schemas/predefined_profile_dto.py
 
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 
 
 class SessionHistoryDTO(BaseModel):
     """Session history for consistency calculation"""
     intent_history: Optional[List[str]] = Field(default_factory=list)
     domain_history: Optional[List[str]] = Field(default_factory=list)
-    signal_history: Optional[Dict[str, List[float]]] = None
+    # Accept either list-of-dicts (preferred) or dict-of-lists (normalized upstream)
+    signal_history: Optional[Union[List[Dict[str, float]], Dict[str, List[float]]]] = None
 
 
 class BehaviorInputDTO(BaseModel):

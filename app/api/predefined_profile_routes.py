@@ -4,11 +4,48 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.services.profile_assigner import ProfileAssigner
 from app.schemas.predefined_profile_dto import BehaviorInputDTO
 from app.core.database import get_db
+from typing import Any, Dict, List, Optional
 
 router = APIRouter(
     prefix="/api/predefined-profiles",
     tags=["profile-assignment"]
 )
+
+
+def _normalize_signal_history(signal_history: Any) -> Optional[List[Dict[str, float]]]:
+    """
+    Normalize signal history to the list-of-dicts format expected by ConsistencyCalculator.
+
+    Accepts either:
+    - list[dict]: already in expected format
+    - dict[str, list[float]]: converts to list[dict] per prompt index
+    """
+    if signal_history is None:
+        return None
+
+    # Already correct format
+    if isinstance(signal_history, list):
+        return signal_history
+
+    if not isinstance(signal_history, dict):
+        return None
+
+    # dict[str, list] -> list[dict]
+    frames: List[Dict[str, float]] = []
+    max_len = 0
+    for values in signal_history.values():
+        if isinstance(values, (list, tuple)):
+            max_len = max(max_len, len(values))
+
+    for idx in range(max_len):
+        frame: Dict[str, float] = {}
+        for name, values in signal_history.items():
+            if isinstance(values, (list, tuple)) and idx < len(values):
+                frame[name] = values[idx]
+        if frame:
+            frames.append(frame)
+
+    return frames if frames else None
 
 
 @router.post("/assign-profile")
@@ -67,12 +104,19 @@ def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
     fallback_threshold = getattr(payload, 'fallback_threshold', 0.70)
 
     try:
+        session_history_dict = payload.session_history.dict() if payload.session_history else None
+        if session_history_dict:
+            # Normalize signal_history to list-of-dicts to avoid str.items errors
+            session_history_dict["signal_history"] = _normalize_signal_history(
+                session_history_dict.get("signal_history")
+            )
+
         result = assigner.assign(
             extracted_behavior=behavior,
             prompt_count=payload.prompt_count,
             user_id=payload.user_id,
             user_mode=user_mode,  # ✅ NEW: Pass user mode
-            session_history=payload.session_history.dict() if payload.session_history else None,
+            session_history=session_history_dict,
             consistency=payload.consistency,
             min_prompts_for_assignment=min_prompts,  # ✅ NEW: Configurable
             cold_start_threshold=cold_threshold,     # ✅ NEW: Configurable
