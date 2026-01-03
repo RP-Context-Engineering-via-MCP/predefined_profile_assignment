@@ -233,7 +233,7 @@ class RankingStateRepository:
                 observation_count=1,
                 last_rank=new_rank,
                 consecutive_top_count=1 if new_rank == 1 else 0,
-                consecutive_drop_count=0 if new_rank == 1 else 1
+                consecutive_drop_count=0
             )
             return state
 

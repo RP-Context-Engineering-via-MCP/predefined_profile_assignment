@@ -5,7 +5,10 @@ from app.services.profile_assigner import ProfileAssigner
 from app.schemas.predefined_profile_dto import BehaviorInputDTO
 from app.core.database import get_db
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/api/predefined-profiles",
+    tags=["profile-assignment"]
+)
 
 
 @router.post("/assign-profile")

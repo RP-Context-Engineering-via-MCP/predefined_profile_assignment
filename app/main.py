@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.db_init import init_db
 from app.api.predefined_profile_routes import router as predefined_profile_router
 from app.api.user_routes import router as user_router
+from app.api.ranking_state_routes import router as ranking_state_router
 
 
 def create_app() -> FastAPI:
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     # Register routers
     app.include_router(predefined_profile_router)
     app.include_router(user_router)
+    app.include_router(ranking_state_router)
 
     return app
 
