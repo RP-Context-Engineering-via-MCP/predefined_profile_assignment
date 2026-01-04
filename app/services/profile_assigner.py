@@ -48,11 +48,11 @@ class ProfileAssigner:
         # Get prompt count from top state
         prompt_count = aggregated_states[0].observation_count if aggregated_states else 0
         
-        # Determine user mode based on prompt count
-        user_mode = "COLD_START" if prompt_count < 5 else "DRIFT_FALLBACK"
-        
         # Check if user has assigned profile
         assigned_profile_id = user.predefined_profile_id if user else None
+        
+        # Get user mode from user database (profile_mode field)
+        user_mode = user.profile_mode.value
         
         # Determine status and confidence level
         if assigned_profile_id:
@@ -60,7 +60,7 @@ class ProfileAssigner:
             # Get confidence from top profile's average score
             if aggregated_states:
                 top_score = aggregated_states[0].average_score
-                confidence_level = "HIGH" if top_score >= 0.45 else "MEDIUM"
+                confidence_level = "HIGH" if top_score >= 0.70 else "MEDIUM"
             else:
                 confidence_level = "MEDIUM"
         else:
@@ -106,7 +106,7 @@ class ProfileAssigner:
         Args:
             user_id: User ID
             user_mode: 'COLD_START' or 'DRIFT_FALLBACK'
-            min_prompts: Minimum observations required (only applies to COLD_START mode)
+            min_prompts: Minimum observations required (cold-start uses the provided value)
             cold_threshold: Average score threshold for cold-start assignment
             fallback_threshold: Average score threshold for fallback assignment
         """
@@ -117,7 +117,7 @@ class ProfileAssigner:
         best = top_states[0]
 
         if user_mode == 'COLD_START':
-            # Cold-start: wait for required prompts (e.g., 5) and check stability
+            # Cold-start: wait for required prompts (external caller sets this, e.g., 5)
             if best.observation_count < min_prompts:
                 return False, None, best.average_score
 
@@ -126,9 +126,8 @@ class ProfileAssigner:
                 return True, best.profile_id, best.average_score
 
         elif user_mode == 'DRIFT_FALLBACK':
-            # Fallback: assign immediately if threshold is exceeded (no prompt count wait)
-            # Since fallback receives a list of prompts, checking min_prompts is pointless
-            if best.average_score >= fallback_threshold:
+            # Fallback: require threshold and stability (consecutive top ranking)
+            if best.average_score >= fallback_threshold and best.consecutive_top_count >= 3:
                 return True, best.profile_id, best.average_score
 
         return False, None, best.average_score
@@ -224,11 +223,9 @@ class ProfileAssigner:
         )
 
         # Determine if assignment should happen
-        # Cold-start: wait for 5 prompts with stability check
-        # Fallback: assign immediately if threshold exceeded (no prompt wait)
-        min_prompts = 5 if user_mode == 'COLD_START' else 0  # Fallback doesn't need min_prompts
+        min_prompts = 5 if user_mode == 'COLD_START' else 3
         cold_threshold = 0.60
-        fallback_threshold = 0.35  # Realistic for normalized scores across 6 profiles (>2x average)
+        fallback_threshold = 0.70
         
         should_assign, assigned_profile_id, avg_score = self.should_assign_profile(
             user_id=user_id,
@@ -241,8 +238,7 @@ class ProfileAssigner:
         # Determine status and confidence level
         if should_assign:
             status = "ASSIGNED"
-            # Adjusted confidence levels for realistic thresholds
-            confidence_level = "HIGH" if avg_score >= 0.45 else "MEDIUM"
+            confidence_level = "HIGH" if avg_score >= 0.70 else "MEDIUM"
             
             # Persist assignment to user table
             try:
