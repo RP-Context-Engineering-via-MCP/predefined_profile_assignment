@@ -1,4 +1,8 @@
-# app/repositories/user_repo.py
+"""User repository.
+
+Provides data access layer for User entity CRUD operations,
+including authentication, profile management, and drift handling.
+"""
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -8,9 +12,22 @@ import uuid
 
 
 class UserRepository:
-    """Repository for User model CRUD operations"""
+    """User data access repository.
+    
+    Handles all database operations for User entities including creation,
+    retrieval, updates, and deletion. Supports both traditional and OAuth
+    authentication workflows.
+    
+    Attributes:
+        db: SQLAlchemy database session
+    """
 
     def __init__(self, db: Session):
+        """Initialize repository with database session.
+        
+        Args:
+            db: Active SQLAlchemy session
+        """
         self.db = db
 
     def create_user(self, username: str, email: str, password_hash: str = None,
@@ -22,28 +39,30 @@ class UserRepository:
                    picture: str = None,
                    provider: str = None,
                    provider_id: str = None) -> User:
-        """
-        Create a new user
+        """Create new user with validation.
+        
+        Supports both traditional (password-based) and OAuth authentication.
+        Automatically generates UUID and sets initial status to ACTIVE.
         
         Args:
-            username: Username
-            email: User email address
-            password_hash: Hashed password (optional for OAuth users)
-            predefined_profile_id: Reference to predefined profile
-            dynamic_profile_id: Reference to dynamic profile
+            username: Unique username (3-50 chars)
+            email: Valid email address (unique)
+            password_hash: Bcrypt password hash (None for OAuth users)
+            predefined_profile_id: Initial profile assignment
+            dynamic_profile_id: Dynamic profile reference
             profile_mode: Profile mode (COLD_START, HYBRID, DYNAMIC_ONLY, DRIFT_FALLBACK)
-            dynamic_profile_confidence: Confidence score for dynamic profile
-            dynamic_profile_ready: Whether dynamic profile is ready
-            name: User's full name
-            picture: Profile picture URL
-            provider: OAuth provider ('google', 'github', etc.)
-            provider_id: OAuth provider's user ID
+            dynamic_profile_confidence: Confidence score for dynamic profile (0.0-1.0)
+            dynamic_profile_ready: Dynamic profile readiness flag
+            name: User's full name (for OAuth)
+            picture: Profile picture URL (for OAuth)
+            provider: OAuth provider (google, github, etc.)
+            provider_id: OAuth provider's unique user identifier
             
         Returns:
-            User: Created user object
+            Created and persisted User object
             
         Raises:
-            IntegrityError: If username or email already exists
+            ValueError: If username or email already exists, or constraint violation
         """
         try:
             user = User(
@@ -75,26 +94,62 @@ class UserRepository:
             raise ValueError("User creation failed due to constraint violation")
 
     def get_user_by_id(self, user_id: str) -> User:
-        """Get user by user_id"""
+        """Retrieve user by unique identifier.
+        
+        Args:
+            user_id: User UUID
+            
+        Returns:
+            User object or None if not found
+        """
         return self.db.query(User).filter(User.user_id == user_id).first()
 
     def get_user_by_username(self, username: str) -> User:
-        """Get user by username"""
+        """Retrieve user by username.
+        
+        Args:
+            username: Unique username
+            
+        Returns:
+            User object or None if not found
+        """
         return self.db.query(User).filter(User.username == username).first()
 
     def get_user_by_email(self, email: str) -> User:
-        """Get user by email"""
+        """Retrieve user by email address.
+        
+        Args:
+            email: User's email
+            
+        Returns:
+            User object or None if not found
+        """
         return self.db.query(User).filter(User.email == email).first()
 
     def get_user_by_provider(self, provider: str, provider_id: str) -> User:
-        """Get user by OAuth provider and provider_id"""
+        """Retrieve user by OAuth provider credentials.
+        
+        Args:
+            provider: OAuth provider name (google, github, etc.)
+            provider_id: Provider's unique user identifier
+            
+        Returns:
+            User object or None if not found
+        """
         return self.db.query(User).filter(
             User.provider == provider,
             User.provider_id == provider_id
         ).first()
 
     def update_last_login(self, user_id: str) -> User:
-        """Update user's last login timestamp"""
+        """Update user's last login timestamp.
+        
+        Args:
+            user_id: User UUID
+            
+        Returns:
+            Updated User object or None if not found
+        """
         user = self.get_user_by_id(user_id)
         if user:
             user.last_login = datetime.utcnow()
@@ -103,11 +158,16 @@ class UserRepository:
         return user
 
     def get_all_users(self, skip: int = 0, limit: int = 100) -> tuple[list[User], int]:
-        """
-        Get all users with pagination
+        """Retrieve all active users with pagination.
         
+        Excludes users with DELETED status.
+        
+        Args:
+            skip: Number of records to skip (for pagination)
+            limit: Maximum records to return
+            
         Returns:
-            Tuple of (users list, total count)
+            Tuple of (user list, total count)
         """
         query = self.db.query(User).filter(User.status != UserStatus.DELETED)
         total = query.count()
@@ -115,28 +175,45 @@ class UserRepository:
         return users, total
 
     def get_users_by_status(self, status: str, skip: int = 0, limit: int = 100) -> tuple[list[User], int]:
-        """Get users filtered by status"""
+        """Retrieve users filtered by account status.
+        
+        Args:
+            status: Status filter (active, suspended, deleted)
+            skip: Number of records to skip
+            limit: Maximum records to return
+            
+        Returns:
+            Tuple of (user list, total count)
+        """
         query = self.db.query(User).filter(User.status == UserStatus(status))
         total = query.count()
         users = query.offset(skip).limit(limit).all()
         return users, total
 
     def update_user(self, user_id: str, **kwargs) -> User:
-        """
-        Update user fields
+        """Update user fields with validation.
+        
+        Supports partial updates with uniqueness checks for username and email.
+        Automatically updates last_active_at timestamp.
         
         Args:
-            user_id: User ID to update
-            **kwargs: Fields to update
+            user_id: User UUID to update
+            **kwargs: Field-value pairs to update. Supported fields:
+                username, email, password_hash, status, predefined_profile_id,
+                dynamic_profile_id, profile_mode, dynamic_profile_confidence,
+                dynamic_profile_ready, fallback_profile_id, fallback_reason,
+                fallback_activated_at
             
         Returns:
-            User: Updated user object
+            Updated User object
+            
+        Raises:
+            ValueError: If user not found, username/email taken, or constraint violation
         """
         user = self.get_user_by_id(user_id)
         if not user:
             raise ValueError(f"User with id {user_id} not found")
 
-        # Map and validate incoming data
         update_data = {}
         
         if "username" in kwargs and kwargs["username"]:
@@ -203,15 +280,20 @@ class UserRepository:
             raise ValueError("Failed to update user - constraint violation")
 
     def delete_user(self, user_id: str, hard_delete: bool = False) -> bool:
-        """
-        Delete a user (soft or hard delete)
+        """Delete user (soft or hard).
+        
+        Soft delete marks user as DELETED status (preserves data).
+        Hard delete permanently removes from database.
         
         Args:
-            user_id: User ID to delete
-            hard_delete: If True, permanently delete; if False, mark as deleted
+            user_id: User UUID to delete
+            hard_delete: If True, permanent deletion; if False, soft delete
             
         Returns:
-            bool: True if deletion was successful
+            True if deletion successful
+            
+        Raises:
+            ValueError: If user not found or deletion fails
         """
         user = self.get_user_by_id(user_id)
         if not user:
@@ -232,16 +314,21 @@ class UserRepository:
 
     def activate_fallback_profile(self, user_id: str, fallback_profile_id: str, 
                                  reason: str) -> User:
-        """
-        Activate fallback profile for a user (drift handling)
+        """Activate drift fallback profile.
+        
+        Switches user to DRIFT_FALLBACK mode and records fallback details.
+        Used when behavioral drift is detected.
         
         Args:
-            user_id: User ID
-            fallback_profile_id: Profile ID to fallback to
-            reason: Reason for fallback
+            user_id: User UUID
+            fallback_profile_id: Profile to fall back to
+            reason: Explanation for fallback activation
             
         Returns:
-            User: Updated user object
+            Updated User object
+            
+        Raises:
+            ValueError: If user not found or activation fails
         """
         user = self.get_user_by_id(user_id)
         if not user:
@@ -262,14 +349,18 @@ class UserRepository:
             raise ValueError(f"Failed to activate fallback profile: {str(e)}")
 
     def deactivate_fallback_profile(self, user_id: str) -> User:
-        """
-        Deactivate fallback profile for a user
+        """Deactivate drift fallback profile.
+        
+        Clears fallback profile and switches to HYBRID mode.
         
         Args:
-            user_id: User ID
+            user_id: User UUID
             
         Returns:
-            User: Updated user object
+            Updated User object
+            
+        Raises:
+            ValueError: If user not found or deactivation fails
         """
         user = self.get_user_by_id(user_id)
         if not user:
@@ -290,7 +381,19 @@ class UserRepository:
             raise ValueError(f"Failed to deactivate fallback profile: {str(e)}")
 
     def search_users(self, query: str, skip: int = 0, limit: int = 100) -> tuple[list[User], int]:
-        """Search users by username or email"""
+        """Search users by username or email.
+        
+        Case-insensitive partial matching on username and email fields.
+        Excludes deleted users.
+        
+        Args:
+            query: Search term to match
+            skip: Number of records to skip
+            limit: Maximum records to return
+            
+        Returns:
+            Tuple of (matching users, total count)
+        """
         db_query = self.db.query(User).filter(
             (User.username.ilike(f"%{query}%") | User.email.ilike(f"%{query}%")),
             User.status != UserStatus.DELETED

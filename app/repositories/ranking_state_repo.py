@@ -1,4 +1,8 @@
-# app/repositories/ranking_state_repo.py
+"""Ranking state repository.
+
+Provides data access layer for UserProfileRankingState CRUD operations,
+including drift detection, observation tracking, and aggregated statistics.
+"""
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -10,9 +14,21 @@ import uuid
 
 
 class RankingStateRepository:
-    """Repository for UserProfileRankingState CRUD operations"""
+    """Ranking state data access repository.
+    
+    Manages temporal tracking of user-profile matching scores and rankings.
+    Implements drift detection through consecutive top/drop counters.
+    
+    Attributes:
+        db: SQLAlchemy database session
+    """
 
     def __init__(self, db: Session):
+        """Initialize repository with database session.
+        
+        Args:
+            db: Active SQLAlchemy session
+        """
         self.db = db
 
     def create_ranking_state(
@@ -27,22 +43,24 @@ class RankingStateRepository:
         consecutive_top_count: int = 0,
         consecutive_drop_count: int = 0
     ) -> UserProfileRankingState:
-        """
-        Create a new ranking state
+        """Create new ranking state for user-profile pair.
+        
+        Initializes tracking state with default or provided metrics.
+        Generates unique UUID identifier.
         
         Args:
-            user_id: User ID
-            profile_id: Profile ID
-            cumulative_score: Total cumulative score
-            average_score: Average score
-            max_score: Maximum score recorded
-            observation_count: Number of observations
-            last_rank: Last recorded rank
-            consecutive_top_count: Count of consecutive top rankings
-            consecutive_drop_count: Count of consecutive rank drops
+            user_id: User unique identifier
+            profile_id: Profile unique identifier
+            cumulative_score: Initial cumulative score (default 0.0)
+            average_score: Initial average score (default 0.0)
+            max_score: Initial maximum score (default 0.0)
+            observation_count: Initial observation count (default 0)
+            last_rank: Initial rank position (default 0)
+            consecutive_top_count: Initial consecutive top count (default 0)
+            consecutive_drop_count: Initial consecutive drop count (default 0)
             
         Returns:
-            UserProfileRankingState: Created ranking state
+            Created and persisted UserProfileRankingState object
             
         Raises:
             ValueError: If user-profile combination already exists
@@ -71,7 +89,14 @@ class RankingStateRepository:
             )
 
     def get_ranking_state_by_id(self, state_id: str) -> Optional[UserProfileRankingState]:
-        """Get ranking state by ID"""
+        """Retrieve ranking state by unique identifier.
+        
+        Args:
+            state_id: Ranking state UUID
+            
+        Returns:
+            UserProfileRankingState object or None
+        """
         return self.db.query(UserProfileRankingState).filter(
             UserProfileRankingState.id == state_id
         ).first()
@@ -81,7 +106,15 @@ class RankingStateRepository:
         user_id: str,
         profile_id: str
     ) -> Optional[UserProfileRankingState]:
-        """Get ranking state by user and profile combination"""
+        """Retrieve ranking state by user-profile pair.
+        
+        Args:
+            user_id: User unique identifier
+            profile_id: Profile unique identifier
+            
+        Returns:
+            UserProfileRankingState object or None
+        """
         return self.db.query(UserProfileRankingState).filter(
             and_(
                 UserProfileRankingState.user_id == user_id,
@@ -95,16 +128,17 @@ class RankingStateRepository:
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[UserProfileRankingState], int]:
-        """
-        Get all ranking states for a specific user
+        """Retrieve all ranking states for specific user.
+        
+        Results ordered by average score descending.
         
         Args:
-            user_id: User ID
-            skip: Number of records to skip
-            limit: Maximum number of records to return
+            user_id: User unique identifier
+            skip: Number of records to skip (pagination)
+            limit: Maximum records to return
             
         Returns:
-            Tuple of (states list, total count)
+            Tuple of (ranking state list, total count)
         """
         query = self.db.query(UserProfileRankingState).filter(
             UserProfileRankingState.user_id == user_id
@@ -120,16 +154,18 @@ class RankingStateRepository:
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[UserProfileRankingState], int]:
-        """
-        Get all ranking states for a specific profile across users
+        """Retrieve all ranking states for specific profile.
+        
+        Shows how different users rank this profile.
+        Results ordered by average score descending.
         
         Args:
-            profile_id: Profile ID
+            profile_id: Profile unique identifier
             skip: Number of records to skip
-            limit: Maximum number of records to return
+            limit: Maximum records to return
             
         Returns:
-            Tuple of (states list, total count)
+            Tuple of (ranking state list, total count)
         """
         query = self.db.query(UserProfileRankingState).filter(
             UserProfileRankingState.profile_id == profile_id
@@ -144,7 +180,17 @@ class RankingStateRepository:
         user_id: str,
         limit: int = 5
     ) -> List[UserProfileRankingState]:
-        """Get top N ranked profiles for a user based on average score"""
+        """Retrieve top N profiles for user.
+        
+        Ordered by average score (descending), then last rank (ascending).
+        
+        Args:
+            user_id: User unique identifier
+            limit: Maximum number of top profiles to return
+            
+        Returns:
+            List of top-ranked UserProfileRankingState objects
+        """
         return self.db.query(UserProfileRankingState).filter(
             UserProfileRankingState.user_id == user_id
         ).order_by(
@@ -157,15 +203,21 @@ class RankingStateRepository:
         state_id: str,
         **kwargs
     ) -> UserProfileRankingState:
-        """
-        Update ranking state fields
+        """Update ranking state fields.
+        
+        Supports partial updates. Automatically updates updated_at timestamp.
         
         Args:
-            state_id: Ranking state ID
-            **kwargs: Fields to update
+            state_id: Ranking state UUID
+            **kwargs: Fields to update. Allowed: cumulative_score, average_score,
+                max_score, observation_count, last_rank, consecutive_top_count,
+                consecutive_drop_count
             
         Returns:
-            UserProfileRankingState: Updated ranking state
+            Updated UserProfileRankingState object
+            
+        Raises:
+            ValueError: If state not found, no fields provided, or update fails
         """
         state = self.get_ranking_state_by_id(state_id)
         if not state:
@@ -204,21 +256,25 @@ class RankingStateRepository:
         new_score: float,
         new_rank: int
     ) -> UserProfileRankingState:
-        """
-        Add a new observation and update aggregated statistics
+        """Add new observation and update aggregated statistics.
         
-        CORRECTED: Drift counter logic aligned with fullplan.txt
-        - rank == 1 → increment consecutive_top_count, reset consecutive_drop_count
-        - rank != 1 → increment consecutive_drop_count, reset consecutive_top_count
+        Implements drift detection counters:
+        - If rank == 1: increment consecutive_top_count, reset consecutive_drop_count
+        - If rank != 1: increment consecutive_drop_count, reset consecutive_top_count
+        
+        Creates new state if user-profile pair doesn't exist.
         
         Args:
-            user_id: User ID
-            profile_id: Profile ID
-            new_score: New score to add
+            user_id: User unique identifier
+            profile_id: Profile unique identifier
+            new_score: New matching score
             new_rank: New rank position
             
         Returns:
-            UserProfileRankingState: Updated ranking state
+            Updated UserProfileRankingState object
+            
+        Raises:
+            ValueError: If observation addition fails
         """
         state = self.get_ranking_state_by_user_profile(user_id, profile_id)
         
@@ -265,14 +321,16 @@ class RankingStateRepository:
             raise ValueError(f"Failed to add observation: {str(e)}")
 
     def delete_ranking_state(self, state_id: str) -> bool:
-        """
-        Delete a ranking state
+        """Delete ranking state permanently.
         
         Args:
-            state_id: Ranking state ID
+            state_id: Ranking state UUID
             
         Returns:
-            bool: True if deletion was successful
+            True if deletion successful
+            
+        Raises:
+            ValueError: If state not found or deletion fails
         """
         state = self.get_ranking_state_by_id(state_id)
         if not state:
@@ -287,7 +345,19 @@ class RankingStateRepository:
             raise ValueError(f"Failed to delete ranking state: {str(e)}")
 
     def delete_all_states_for_user(self, user_id: str) -> int:
-        """Delete all ranking states for a user"""
+        """Delete all ranking states for user.
+        
+        Useful for user cleanup or reset operations.
+        
+        Args:
+            user_id: User unique identifier
+            
+        Returns:
+            Number of states deleted
+            
+        Raises:
+            ValueError: If deletion fails
+        """
         try:
             count = self.db.query(UserProfileRankingState).filter(
                 UserProfileRankingState.user_id == user_id
@@ -304,16 +374,17 @@ class RankingStateRepository:
         top_threshold: int = 3,
         drop_threshold: int = 3
     ) -> List[UserProfileRankingState]:
-        """
-        Get ranking states showing drift signals
+        """Retrieve ranking states showing drift signals.
+        
+        Identifies profiles requiring attention based on consecutive patterns.
         
         Args:
-            user_id: User ID
-            top_threshold: Minimum consecutive top counts to consider drift
-            drop_threshold: Minimum consecutive drop counts to consider drift
+            user_id: User unique identifier
+            top_threshold: Minimum consecutive top ranks to flag (default 3)
+            drop_threshold: Minimum consecutive drops to flag (default 3)
             
         Returns:
-            List of ranking states with drift signals
+            List of UserProfileRankingState objects with drift signals
         """
         return self.db.query(UserProfileRankingState).filter(
             and_(
@@ -326,7 +397,19 @@ class RankingStateRepository:
         ).all()
 
     def reset_drift_counters(self, state_id: str) -> UserProfileRankingState:
-        """Reset drift counters for a ranking state"""
+        """Reset drift detection counters.
+        
+        Used after manual intervention or profile adjustment.
+        
+        Args:
+            state_id: Ranking state UUID
+            
+        Returns:
+            Updated UserProfileRankingState object
+            
+        Raises:
+            ValueError: If state not found or reset fails
+        """
         state = self.get_ranking_state_by_id(state_id)
         if not state:
             raise ValueError(f"Ranking state with id {state_id} not found")
