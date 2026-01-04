@@ -10,44 +10,29 @@ Computes task complexity (0-1 scale) based on prompt characteristics:
 - Use of examples or structure
 """
 
+from typing import Dict, Optional
+from app.core.constants import ComplexityConstants, DefaultValues
+from app.core.logging_config import calculator_logger
+
 
 class ComplexityCalculator:
-    """Calculates task complexity from prompt characteristics."""
+    """
+    Calculates task complexity from prompt characteristics.
     
-    # Word count thresholds
-    LOW_COMPLEXITY_THRESHOLD = 20       # Simple prompts: <20 words
-    HIGH_COMPLEXITY_THRESHOLD = 100     # Complex prompts: >100 words
-    
-    # Complexity markers
-    CONSTRAINT_KEYWORDS = [
-        "must", "should", "not", "except", "avoid", "only",
-        "limit", "without", "require", "constraint", "restrict",
-        "specific", "exactly", "precisely", "format", "include",
-        "handle", "optimize"
-    ]
-    
-    MULTI_STEP_KEYWORDS = [
-        "first", "then", "next", "after", "finally", "step",
-        "stage", "phase", "follow", "sequence", "order",
-        "and then", "subsequently", "moreover"
-    ]
-    
-    STRUCTURE_KEYWORDS = [
-        "structure", "organize", "format", "template", "outline",
-        "list", "number", "bullet", "table", "section",
-        "header", "subheader", "code", "json", "xml"
-    ]
-    
-    EXAMPLE_KEYWORDS = [
-        "example", "like", "such as", "for instance", "e.g",
-        "show", "demonstrate", "illustration", "sample",
-        "template", "reference"
-    ]
+    Uses keyword detection and prompt analysis to score complexity on 0-1 scale.
+    """
     
     @staticmethod
     def compute_complexity(prompt_text: str) -> float:
         """
         Compute task complexity from prompt text.
+        
+        Analyzes multiple factors:
+        - Word count (length)
+        - Constraint keywords
+        - Multi-step indicators
+        - Structural requirements
+        - Example usage
         
         Args:
             prompt_text: The user's prompt/request
@@ -56,7 +41,10 @@ class ComplexityCalculator:
             float: Complexity score (0.0 = simple, 1.0 = very complex)
         """
         if not prompt_text or not isinstance(prompt_text, str):
-            return 0.5  # Default neutral
+            calculator_logger.debug(
+                f"Invalid prompt text, returning default: {DefaultValues.DEFAULT_COMPLEXITY}"
+            )
+            return DefaultValues.DEFAULT_COMPLEXITY
         
         prompt_lower = prompt_text.lower()
         words = prompt_text.split()
@@ -64,63 +52,105 @@ class ComplexityCalculator:
         
         complexity_score = 0.0
         
-        # Factor 1: Prompt Length (0-0.20 points) - Reduced from 0.25
-        # Low: <20 words (0.05) | Medium: 20-100 words (0.15) | High: >100 words (0.20)
-        if word_count < ComplexityCalculator.LOW_COMPLEXITY_THRESHOLD:
-            complexity_score += 0.05
-        elif word_count > ComplexityCalculator.HIGH_COMPLEXITY_THRESHOLD:
-            complexity_score += 0.20
-        else:
-            # Linear scaling between thresholds
-            normalized = (word_count - ComplexityCalculator.LOW_COMPLEXITY_THRESHOLD) / \
-                        (ComplexityCalculator.HIGH_COMPLEXITY_THRESHOLD - ComplexityCalculator.LOW_COMPLEXITY_THRESHOLD)
-            complexity_score += 0.05 + (0.15 * normalized)
+        # Factor 1: Prompt Length
+        length_score = ComplexityCalculator._calculate_length_score(word_count)
+        complexity_score += length_score
         
-        # Factor 2: Constraint Keywords (0-0.70 points) - Increased from 0.65
+        # Factor 2: Constraint Keywords
         constraint_count = sum(
             prompt_lower.count(keyword) 
-            for keyword in ComplexityCalculator.CONSTRAINT_KEYWORDS
+            for keyword in ComplexityConstants.CONSTRAINT_KEYWORDS
         )
         if constraint_count > 0:
-            constraint_score = min(0.70, 0.23 * constraint_count)  # 0.23 per keyword
+            constraint_score = min(
+                ComplexityConstants.CONSTRAINT_MAX_SCORE,
+                ComplexityConstants.CONSTRAINT_PER_KEYWORD * constraint_count
+            )
             complexity_score += constraint_score
         
-        # Factor 3: Multi-Step Instructions (0-0.60 points) - Increased to 0.60
+        # Factor 3: Multi-Step Instructions
         multistep_count = sum(
             prompt_lower.count(keyword)
-            for keyword in ComplexityCalculator.MULTI_STEP_KEYWORDS
+            for keyword in ComplexityConstants.MULTI_STEP_KEYWORDS
         )
         if multistep_count > 0:
-            multistep_score = min(0.60, 0.20 * multistep_count)  # Increased from 0.18 to 0.20
+            multistep_score = min(
+                ComplexityConstants.MULTISTEP_MAX_SCORE,
+                ComplexityConstants.MULTISTEP_PER_KEYWORD * multistep_count
+            )
             complexity_score += multistep_score
         
-        # Factor 4: Structural/Formatting Keywords (0-0.12 points) - Slightly increased
+        # Factor 4: Structural/Formatting Keywords
         structure_count = sum(
             prompt_lower.count(keyword)
-            for keyword in ComplexityCalculator.STRUCTURE_KEYWORDS
+            for keyword in ComplexityConstants.STRUCTURE_KEYWORDS
         )
         if structure_count > 0:
-            structure_score = min(0.12, 0.08 * structure_count)
+            structure_score = min(
+                ComplexityConstants.STRUCTURE_MAX_SCORE,
+                ComplexityConstants.STRUCTURE_PER_KEYWORD * structure_count
+            )
             complexity_score += structure_score
         
-        # Factor 5: Examples Provided (0-0.08 points) - Slightly reduced
+        # Factor 5: Examples Provided
         example_count = sum(
             prompt_lower.count(keyword)
-            for keyword in ComplexityCalculator.EXAMPLE_KEYWORDS
+            for keyword in ComplexityConstants.EXAMPLE_KEYWORDS
         )
         if example_count > 0:
-            example_score = min(0.08, 0.05 * example_count)
+            example_score = min(
+                ComplexityConstants.EXAMPLE_MAX_SCORE,
+                ComplexityConstants.EXAMPLE_PER_KEYWORD * example_count
+            )
             complexity_score += example_score
         
         # Normalize to 0-1 scale
         normalized_score = min(1.0, complexity_score)
+        final_score = round(normalized_score, 2)
         
-        return round(normalized_score, 2)
+        calculator_logger.debug(
+            f"Complexity calculated: {final_score:.2f} "
+            f"(words={word_count}, constraints={constraint_count}, "
+            f"multistep={multistep_count}, structure={structure_count}, "
+            f"examples={example_count})"
+        )
+        
+        return final_score
     
     @staticmethod
-    def compute_complexity_from_signals(signals: dict) -> float:
+    def _calculate_length_score(word_count: int) -> float:
+        """
+        Calculate complexity score based on word count.
+        
+        Args:
+            word_count: Number of words in prompt
+            
+        Returns:
+            float: Length-based complexity score
+        """
+        if word_count < ComplexityConstants.LOW_COMPLEXITY_THRESHOLD:
+            return ComplexityConstants.LENGTH_MIN_SCORE
+        elif word_count > ComplexityConstants.HIGH_COMPLEXITY_THRESHOLD:
+            return ComplexityConstants.LENGTH_MAX_SCORE
+        else:
+            # Linear scaling between thresholds
+            normalized = (
+                (word_count - ComplexityConstants.LOW_COMPLEXITY_THRESHOLD) /
+                (ComplexityConstants.HIGH_COMPLEXITY_THRESHOLD - 
+                 ComplexityConstants.LOW_COMPLEXITY_THRESHOLD)
+            )
+            return ComplexityConstants.LENGTH_MIN_SCORE + (
+                (ComplexityConstants.LENGTH_MAX_SCORE - ComplexityConstants.LENGTH_MIN_SCORE) * 
+                normalized
+            )
+    
+    @staticmethod
+    def compute_complexity_from_signals(signals: Dict[str, float]) -> float:
         """
         Compute complexity from behavior signals.
+        
+        Alternative method that derives complexity from behavioral signals
+        rather than prompt text analysis.
         
         Args:
             signals: Dict of signal_name -> score
@@ -129,7 +159,8 @@ class ComplexityCalculator:
             float: Complexity score (0.0 = simple, 1.0 = very complex)
         """
         if not signals:
-            return 0.5
+            calculator_logger.debug("No signals provided, returning default complexity")
+            return DefaultValues.DEFAULT_COMPLEXITY
         
         complexity_score = 0.0
         
@@ -150,5 +181,11 @@ class ComplexityCalculator:
         
         # Normalize to 0-1 scale
         normalized_score = max(0.0, min(1.0, complexity_score))
+        final_score = round(normalized_score, 2)
         
-        return round(normalized_score, 2)
+        calculator_logger.debug(
+            f"Complexity from signals: {final_score:.2f} (signals={signals})"
+        )
+        
+        return final_score
+

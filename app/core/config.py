@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     # Application settings
     APP_NAME: str = "Predefined Profile Assignment Service"
     ENVIRONMENT: str = "development"
+    DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"
     
     # OAuth Configuration
     JWT_SECRET_KEY: str = "your-secret-key-change-this-in-production"
@@ -20,6 +22,13 @@ class Settings(BaseSettings):
     # GitHub OAuth
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
+    
+    # Profile Assignment Configuration
+    MIN_PROMPTS_COLD_START: int = 3
+    MIN_PROMPTS_FALLBACK: int = 5
+    COLD_START_THRESHOLD: float = 0.60
+    FALLBACK_THRESHOLD: float = 0.70
+    HIGH_CONFIDENCE_THRESHOLD: float = 0.70
 
     class Config:
         env_file = ".env"

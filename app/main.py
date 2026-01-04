@@ -4,15 +4,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.db_init import init_db
+from app.core.logging_config import setup_logging
 from app.api.predefined_profile_routes import router as predefined_profile_router
 from app.api.user_routes import router as user_router
 from app.api.ranking_state_routes import router as ranking_state_router
 
 
 def create_app() -> FastAPI:
+    """
+    Create and configure the FastAPI application.
+    
+    Returns:
+        FastAPI: Configured application instance
+    """
+    # Initialize logging
+    setup_logging()
+    
     app = FastAPI(
         title="Predefined Profile Assignment Service",
-        version="1.0.0"
+        version="1.0.0",
+        description="AI-powered user profile assignment and matching service"
     )
 
     # Configure CORS

@@ -11,74 +11,95 @@ Computes user consistency (0-1 scale) based on:
 - Pattern consistency
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 from collections import Counter
+from app.core.constants import ConsistencyConstants, DefaultValues
+from app.core.logging_config import calculator_logger
 
 
 class ConsistencyCalculator:
-    """Calculates session-level consistency from behavioral patterns."""
+    """
+    Calculates session-level consistency from behavioral patterns.
+    
+    Analyzes user behavior patterns across multiple prompts to determine
+    consistency in intents, domains, and interaction styles.
+    """
     
     @staticmethod
-    def compute_from_history(intent_history: List[str], 
-                            domain_history: List[str],
-                            signal_history: List[Dict] = None) -> float:
+    def compute_from_history(
+        intent_history: List[str], 
+        domain_history: List[str],
+        signal_history: Optional[List[Dict]] = None
+    ) -> float:
         """
         Compute consistency from session history.
         
+        Analyzes:
+        - Intent repetition (how often same intent is used)
+        - Domain stability (how often same domain is used)
+        - Temporal consistency (pattern maintenance over time)
+        - Signal consistency (behavioral style stability - optional)
+        
         Args:
-            intent_history: List of intents from each prompt (ordered chronologically)
-            domain_history: List of domains from each prompt (ordered chronologically)
+            intent_history: List of intents from each prompt (chronological)
+            domain_history: List of domains from each prompt (chronological)
             signal_history: Optional list of signal dicts from each prompt
             
         Returns:
             float: Consistency score (0.0 = no pattern, 1.0 = highly consistent)
         """
         if not intent_history or len(intent_history) == 0:
-            return 0.5  # Default neutral
+            calculator_logger.debug("No intent history, returning default consistency")
+            return DefaultValues.DEFAULT_CONSISTENCY
         
         # Special case: single prompt has no consistency pattern yet
         if len(intent_history) == 1:
-            return 0.5  # Neutral default for single prompt
+            calculator_logger.debug("Single prompt, returning default consistency")
+            return DefaultValues.DEFAULT_CONSISTENCY
         
         consistency_score = 0.0
         
-        # Factor 1: Intent Repetition (0-0.40 points) - Increased from 0.35
-        # Measure how often the same intent appears
+        # Factor 1: Intent Repetition
         intent_consistency = ConsistencyCalculator._calculate_repetition_score(
             intent_history,
-            weight=0.40
+            weight=ConsistencyConstants.INTENT_WEIGHT
         )
         consistency_score += intent_consistency
         
-        # Factor 2: Domain Stability (0-0.40 points) - Increased from 0.35
-        # Measure how often the same domain appears
+        # Factor 2: Domain Stability
         domain_consistency = ConsistencyCalculator._calculate_repetition_score(
             domain_history,
-            weight=0.40
+            weight=ConsistencyConstants.DOMAIN_WEIGHT
         )
         consistency_score += domain_consistency
         
-        # Factor 3: Temporal Consistency (0-0.20 points)
-        # Measure if pattern is maintained over time
+        # Factor 3: Temporal Consistency
         temporal_consistency = ConsistencyCalculator._calculate_temporal_consistency(
             intent_history,
             domain_history,
-            weight=0.20
+            weight=ConsistencyConstants.TEMPORAL_WEIGHT
         )
         consistency_score += temporal_consistency
         
-        # Factor 4: Signal Consistency (0-0.10 points, optional)
+        # Factor 4: Signal Consistency (optional)
         if signal_history and len(signal_history) > 0:
             signal_consistency = ConsistencyCalculator._calculate_signal_consistency(
                 signal_history,
-                weight=0.10
+                weight=ConsistencyConstants.SIGNAL_WEIGHT
             )
             consistency_score += signal_consistency
         
         # Normalize to 0-1 scale
         normalized_score = min(1.0, max(0.0, consistency_score))
+        final_score = round(normalized_score, 2)
         
-        return round(normalized_score, 2)
+        calculator_logger.debug(
+            f"Consistency calculated: {final_score:.2f} "
+            f"(intent={intent_consistency:.2f}, domain={domain_consistency:.2f}, "
+            f"temporal={temporal_consistency:.2f})"
+        )
+        
+        return final_score
     
     @staticmethod
     def _calculate_repetition_score(history: List[str], weight: float = 1.0) -> float:
@@ -127,13 +148,16 @@ class ConsistencyCalculator:
         return weight * normalized_dominance
     
     @staticmethod
-    def _calculate_temporal_consistency(intent_history: List[str],
-                                       domain_history: List[str],
-                                       weight: float = 1.0) -> float:
+    def _calculate_temporal_consistency(
+        intent_history: List[str],
+        domain_history: List[str],
+        weight: float = 1.0
+    ) -> float:
         """
         Calculate if pattern is consistent over time (not just repetition).
         
         Checks if recent prompts maintain same intent/domain as earlier ones.
+        Measures transition stability.
         
         Args:
             intent_history: List of intents over time
@@ -148,13 +172,13 @@ class ConsistencyCalculator:
         
         temporal_score = 0.0
         
-        # Check intent consistency
+        # Check intent consistency (60% of temporal weight)
         intent_transitions = ConsistencyCalculator._calculate_transition_stability(
             intent_history
         )
         temporal_score += intent_transitions * (weight * 0.6)
         
-        # Check domain consistency
+        # Check domain consistency (40% of temporal weight)
         domain_transitions = ConsistencyCalculator._calculate_transition_stability(
             domain_history
         )
@@ -165,7 +189,7 @@ class ConsistencyCalculator:
     @staticmethod
     def _calculate_transition_stability(history: List[str]) -> float:
         """
-        Measure stability of transitions (how often do we stay with same item).
+        Measure stability of transitions (how often we stay with same item).
         
         Low transitions = high stability
         Many transitions = low stability
@@ -194,8 +218,10 @@ class ConsistencyCalculator:
         return stability
     
     @staticmethod
-    def _calculate_signal_consistency(signal_history: List[Dict],
-                                     weight: float = 1.0) -> float:
+    def _calculate_signal_consistency(
+        signal_history: List[Dict],
+        weight: float = 1.0
+    ) -> float:
         """
         Calculate signal consistency (behavior style stability).
         
