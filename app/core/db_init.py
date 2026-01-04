@@ -1,9 +1,15 @@
-# app/core/db_init.py
+"""Database Initialization and Seeding Module.
+
+This module handles database schema creation and initial data seeding.
+Ensures all ORM models are registered with SQLAlchemy and executes
+seed SQL scripts for predefined profiles and reference data.
+
+All operations are idempotent and safe to run multiple times.
+"""
 
 from sqlalchemy import text
 from app.core.database import engine, Base
 
-# IMPORTANT: import all models so SQLAlchemy registers them
 from app.models import (
     profile,
     intent,
@@ -28,7 +34,15 @@ SEED_SQL_PATH = "app/core/initial_seed.sql"
 
 
 def seed_data() -> None:
-    """Seed initial data using raw SQL (idempotent)."""
+    """Seed initial reference data from SQL script.
+    
+    Executes SQL statements from initial_seed.sql to populate predefined
+    profiles, intents, domains, interests, behaviors, traits, and matching
+    factors. Uses idempotent INSERT ON CONFLICT statements.
+    
+    Raises:
+        Exception: If SQL file cannot be read or execution fails.
+    """
     with open(SEED_SQL_PATH, "r", encoding="utf-8") as f:
         seed_sql = f.read()
 
@@ -37,12 +51,17 @@ def seed_data() -> None:
 
 
 def init_db() -> None:
+    """Initialize complete database schema and seed data.
+    
+    Performs two-step initialization:
+    1. Creates all tables from ORM model metadata
+    2. Seeds initial reference data from SQL script
+    
+    Safe to run multiple times - both operations are idempotent.
+    Call during application startup to ensure database readiness.
+    
+    Raises:
+        Exception: If schema creation or seeding fails.
     """
-    Initialize database schema and seed initial data.
-    Safe to run multiple times.
-    """
-    # 1. Create tables
     Base.metadata.create_all(bind=engine)
-
-    # 2. Seed data
     seed_data()

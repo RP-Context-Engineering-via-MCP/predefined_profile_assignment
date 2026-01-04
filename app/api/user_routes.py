@@ -1,4 +1,15 @@
-# app/api/user_routes.py
+"""User API Routes Module.
+
+This module provides RESTful API endpoints for user management operations including:
+- User registration and authentication (traditional and OAuth)
+- User account CRUD operations  
+- Password management
+- Account status management (activation, suspension)
+- Fallback profile management for drift handling
+
+All endpoints follow REST conventions with appropriate HTTP status codes,
+error handling, and response models for type safety.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -27,14 +38,27 @@ router = APIRouter(
 )
 
 
-# Dependency
 def get_user_service(db: Session = Depends(get_db)) -> UserService:
+    """Dependency injection for UserService.
+    
+    Args:
+        db: Database session injected by FastAPI.
+        
+    Returns:
+        UserService: Configured user service instance.
+    """
     return UserService(db)
 
 
-# Helper function to convert User model to UserResponse
 def to_user_response(user) -> dict:
-    """Convert User model to response dict"""
+    """Convert User ORM model to UserResponse dictionary.
+    
+    Args:
+        user: User ORM model instance.
+        
+    Returns:
+        dict: User data formatted for API response with all fields properly serialized.
+    """
     return {
         "user_id": user.user_id,
         "username": user.username,
@@ -60,7 +84,22 @@ def register_user(
     user_data: UserCreateRequest,
     service: UserService = Depends(get_user_service)
 ):
-    """Register a new user"""
+    """Register a new user account.
+    
+    Creates a new user with username, email, and password. Validates uniqueness
+    of username and email before creating the account.
+    
+    Args:
+        user_data: User registration data (username, email, password).
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Created user data.
+        
+    Raises:
+        HTTPException 400: If username/email already exists or validation fails.
+        HTTPException 500: If user creation fails due to server error.
+    """
     try:
         user = service.create_user(user_data)
         return to_user_response(user)
@@ -157,11 +196,23 @@ async def github_oauth_callback(
     request: GitHubCallbackRequest,
     service: UserService = Depends(get_user_service)
 ):
-    """
-    Handle GitHub OAuth callback
+    """Handle GitHub OAuth callback and complete authentication flow.
     
-    Exchange authorization code for access token, fetch user info from GitHub,
-    and create or authenticate user. Returns JWT token with user data.
+    Exchanges authorization code for GitHub access token, fetches user profile
+    data from GitHub API, retrieves verified email, and creates or authenticates
+    user account. Returns JWT token for authenticated session.
+    
+    Args:
+        request: GitHub callback data (authorization code and redirect URI).
+        service: Injected UserService dependency.
+        
+    Returns:
+        OAuthLoginResponse: User data with JWT token and new user flag.
+        
+    Raises:
+        HTTPException 500: If GitHub OAuth is not configured on server.
+        HTTPException 400: If code exchange fails or no verified email found.
+        HTTPException 500: If GitHub API calls or user creation fails.
     """
     GITHUB_CLIENT_ID = settings.GITHUB_CLIENT_ID
     GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET
@@ -285,14 +336,23 @@ async def github_oauth_callback(
 
 
 
-# ==================== CRUD Routes ====================
-
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: str,
     service: UserService = Depends(get_user_service)
 ):
-    """Get user by ID"""
+    """Retrieve user by unique identifier.
+    
+    Args:
+        user_id: Unique user identifier (UUID).
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Complete user data.
+        
+    Raises:
+        HTTPException 404: If user with given ID does not exist.
+    """
     user = service.get_user_by_id(user_id)
     if not user:
         raise HTTPException(
@@ -310,7 +370,24 @@ def list_users(
     search: str = Query(None),
     service: UserService = Depends(get_user_service)
 ):
-    """Get all users with pagination and filtering"""
+    """List all users with pagination and optional filtering.
+    
+    Supports pagination via skip/limit and filtering by user status or search term
+    (matches username/email).
+    
+    Args:
+        skip: Number of records to skip (default: 0).
+        limit: Maximum number of records to return (default: 100, max: 1000).
+        status: Optional status filter (active/inactive/suspended).
+        search: Optional search term for username/email matching.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserListResponse: Paginated list of users with total count.
+        
+    Raises:
+        HTTPException 500: If database query fails.
+    """
     try:
         users, total = service.list_users(skip=skip, limit=limit, status=status, search=search)
         user_responses = [to_user_response(user) for user in users]
@@ -327,7 +404,18 @@ def get_user_by_username(
     username: str,
     service: UserService = Depends(get_user_service)
 ):
-    """Get user by username"""
+    """Retrieve user by username.
+    
+    Args:
+        username: Unique username.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Complete user data.
+        
+    Raises:
+        HTTPException 404: If user with given username does not exist.
+    """
     user = service.get_user_by_username(username)
     if not user:
         raise HTTPException(
@@ -342,7 +430,18 @@ def get_user_by_email(
     email: str,
     service: UserService = Depends(get_user_service)
 ):
-    """Get user by email"""
+    """Retrieve user by email address.
+    
+    Args:
+        email: User's email address.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Complete user data.
+        
+    Raises:
+        HTTPException 404: If user with given email does not exist.
+    """
     user = service.get_user_by_email(email)
     if not user:
         raise HTTPException(
@@ -358,7 +457,23 @@ def update_user(
     user_data: UserUpdateRequest,
     service: UserService = Depends(get_user_service)
 ):
-    """Update user"""
+    """Update user account information.
+    
+    Updates user fields such as username, email, or profile associations.
+    Only provided fields are updated (partial update).
+    
+    Args:
+        user_id: Unique user identifier.
+        user_data: Updated user fields.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Updated user data.
+        
+    Raises:
+        HTTPException 400: If validation fails (e.g., duplicate username/email).
+        HTTPException 500: If update operation fails.
+    """
     try:
         user = service.update_user(user_id, user_data)
         return to_user_response(user)
@@ -377,7 +492,23 @@ def delete_user(
     hard_delete: bool = Query(False),
     service: UserService = Depends(get_user_service)
 ):
-    """Delete user (soft or hard delete)"""
+    """Delete user account (soft or hard delete).
+    
+    Supports both soft delete (marks as deleted, preserves data) and hard delete
+    (permanent removal from database).
+    
+    Args:
+        user_id: Unique user identifier.
+        hard_delete: If True, permanently removes user; if False, soft deletes (default: False).
+        service: Injected UserService dependency.
+        
+    Returns:
+        None: No content on successful deletion (204 status).
+        
+    Raises:
+        HTTPException 404: If user does not exist.
+        HTTPException 500: If deletion operation fails.
+    """
     try:
         service.delete_user(user_id, hard_delete=hard_delete)
         return None
@@ -390,9 +521,8 @@ def delete_user(
         )
 
 
-# ==================== Password Management ====================
-
 class PasswordChangeRequest(BaseModel):
+    """Request model for password change operation."""
     old_password: str
     new_password: str
 
@@ -403,7 +533,23 @@ def change_password(
     password_data: PasswordChangeRequest,
     service: UserService = Depends(get_user_service)
 ):
-    """Change user password"""
+    """Change user password with verification.
+    
+    Validates old password before setting new password. Requires both old and new
+    passwords for security.
+    
+    Args:
+        user_id: Unique user identifier.
+        password_data: Old and new passwords.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Updated user data.
+        
+    Raises:
+        HTTPException 400: If old password is incorrect or validation fails.
+        HTTPException 500: If password change operation fails.
+    """
     try:
         user = service.change_password(
             user_id,
@@ -420,15 +566,29 @@ def change_password(
         )
 
 
-# ==================== Account Status Management ====================
-
 @router.post("/{user_id}/suspend", response_model=UserResponse)
 def suspend_user(
     user_id: str,
     reason: str = Query(None),
     service: UserService = Depends(get_user_service)
 ):
-    """Suspend user account"""
+    """Suspend user account.
+    
+    Marks user account as suspended, preventing login and access. Optionally
+    records reason for suspension.
+    
+    Args:
+        user_id: Unique user identifier.
+        reason: Optional reason for suspension.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Updated user data with suspended status.
+        
+    Raises:
+        HTTPException 404: If user does not exist.
+        HTTPException 500: If suspension operation fails.
+    """
     try:
         user = service.suspend_user(user_id, reason)
         return to_user_response(user)
@@ -446,7 +606,22 @@ def activate_user(
     user_id: str,
     service: UserService = Depends(get_user_service)
 ):
-    """Activate suspended user account"""
+    """Activate suspended user account.
+    
+    Restores access to previously suspended user account by changing status
+    back to active.
+    
+    Args:
+        user_id: Unique user identifier.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Updated user data with active status.
+        
+    Raises:
+        HTTPException 404: If user does not exist.
+        HTTPException 500: If activation operation fails.
+    """
     try:
         user = service.activate_user(user_id)
         return to_user_response(user)
@@ -459,8 +634,6 @@ def activate_user(
         )
 
 
-# ==================== Profile Management ====================
-
 @router.post("/{user_id}/fallback/activate", response_model=UserResponse)
 def activate_fallback(
     user_id: str,
@@ -468,7 +641,25 @@ def activate_fallback(
     reason: str = Query(...),
     service: UserService = Depends(get_user_service)
 ):
-    """Activate fallback profile for drift handling"""
+    """Activate fallback profile for drift handling.
+    
+    Sets a fallback predefined profile when user's behavior drifts significantly
+    from assigned profile. Used for maintaining system stability during behavioral
+    inconsistencies.
+    
+    Args:
+        user_id: Unique user identifier.
+        fallback_profile_id: ID of predefined profile to use as fallback.
+        reason: Reason for activating fallback (e.g., drift detected).
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Updated user data with fallback profile activated.
+        
+    Raises:
+        HTTPException 404: If user or profile does not exist.
+        HTTPException 500: If activation operation fails.
+    """
     try:
         user = service.activate_fallback_profile(user_id, fallback_profile_id, reason)
         return to_user_response(user)
@@ -486,7 +677,22 @@ def deactivate_fallback(
     user_id: str,
     service: UserService = Depends(get_user_service)
 ):
-    """Deactivate fallback profile"""
+    """Deactivate fallback profile.
+    
+    Removes fallback profile assignment, returning user to normal profile mode
+    after drift situation resolves.
+    
+    Args:
+        user_id: Unique user identifier.
+        service: Injected UserService dependency.
+        
+    Returns:
+        UserResponse: Updated user data with fallback profile removed.
+        
+    Raises:
+        HTTPException 404: If user does not exist.
+        HTTPException 500: If deactivation operation fails.
+    """
     try:
         user = service.deactivate_fallback_profile(user_id)
         return to_user_response(user)

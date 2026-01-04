@@ -1,4 +1,13 @@
-# app/api/predefined_profile_routes.py
+"""Predefined Profile Assignment API Routes Module.
+
+This module provides RESTful API endpoints for profile assignment operations:
+- Retrieving user profile assignment status with aggregated rankings
+- Assigning profiles based on extracted behavior data
+- Supporting both COLD_START and DRIFT_FALLBACK user modes
+
+Profile assignment uses behavioral signals to match users with predefined
+profiles based on complexity, consistency, and behavioral compatibility.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 from app.services.profile_assigner import ProfileAssigner
@@ -16,15 +25,24 @@ def get_profile_assignment_status(
     user_id: str = Path(..., description="User ID to retrieve profile assignment status"),
     db=Depends(get_db)
 ):
-    """
-    Get current profile assignment status and aggregated rankings for a user.
+    """Retrieve current profile assignment status for user.
+    
+    Provides comprehensive profile assignment information including assigned profile,
+    confidence levels, and aggregated rankings across all predefined profiles.
     
     Args:
-        user_id: User ID to retrieve status for
-        db: Database session dependency
+        user_id: Unique user identifier.
+        db: Database session dependency.
         
     Returns:
-        Current profile assignment status with confidence levels and aggregated rankings
+        dict: Profile assignment status containing:
+            - assigned_profile_id: Currently assigned profile
+            - confidence: Assignment confidence level
+            - aggregated_rankings: Scores for all profiles
+            - ranking_states: Individual ranking state details
+        
+    Raises:
+        HTTPException 500: If status retrieval fails.
     """
     assigner = ProfileAssigner(db)
     
@@ -37,18 +55,33 @@ def get_profile_assignment_status(
 
 @router.post("/assign-profile")
 def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
-    """
-    Assign a profile based on extracted behavior and update ranking state.
+    """Assign predefined profile based on extracted behavior data.
     
-    For COLD_START mode: Pass a single behavior dict
-    For DRIFT_FALLBACK mode: Pass a list of behavior dicts to process multiple prompts at once
+    Processes user behavior to assign the most suitable predefined profile.
+    Supports two modes:
+    - COLD_START: Single behavior dict for new users (initial assignment)
+    - DRIFT_FALLBACK: List of behavior dicts for multi-prompt processing
+    
+    Updates ranking state with new observations and recalculates profile assignments
+    based on complexity, consistency, and behavioral matching.
     
     Args:
-        payload: BehaviorInputDTO containing behavior data, user_id, and user_mode
-        db: Database session dependency
+        payload: BehaviorInputDTO containing:
+            - user_id: Unique user identifier
+            - user_mode: Assignment mode (COLD_START or DRIFT_FALLBACK)
+            - behavior: Single dict (COLD_START) or list of dicts (DRIFT_FALLBACK)
+        db: Database session dependency.
         
     Returns:
-        Profile assignment result with confidence levels and aggregated rankings
+        dict: Assignment result containing:
+            - assigned_profile_id: Selected profile
+            - confidence: Assignment confidence (0.0-1.0)
+            - aggregated_rankings: Scores for all profiles
+            - match_details: Detailed matching factors
+        
+    Raises:
+        HTTPException 400: If user_id missing or behavior format invalid for mode.
+        HTTPException 500: If profile assignment process fails.
     """
     if not payload.user_id:
         raise HTTPException(

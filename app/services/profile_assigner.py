@@ -1,7 +1,7 @@
-"Profile assignment orchestration service.
+"""Profile assignment orchestration service.
 
 Coordinates profile matching, ranking state management, and assignment decisions
-for both cold-start and drift-fallback scenarios."
+for both cold-start and drift-fallback scenarios."""
 
 from app.services.profile_matcher import ProfileMatcher
 from app.services.consistency_calculator import ConsistencyCalculator
@@ -185,10 +185,13 @@ class ProfileAssigner:
             user_mode: Assignment mode (COLD_START or DRIFT_FALLBACK)
             
         Returns:
-            Dictionary containing assignment status, confidence, mode, prompt_count,
-            assigned_profile_id, and aggregated_rankings
-        """
-            Dict with status, confidence_level, user_mode, prompt_count, assigned_profile_id, aggregated_rankings
+            dict: Assignment result containing:
+                - status: ASSIGNED or PENDING
+                - confidence_level: HIGH, MEDIUM, or LOW
+                - user_mode: Assignment mode used
+                - prompt_count: Total prompts processed
+                - assigned_profile_id: Assigned profile or None
+                - aggregated_rankings: List of all profile ranking states
         """
         # Load profiles and matching factors
         profiles = self.repo.load_full_profiles()

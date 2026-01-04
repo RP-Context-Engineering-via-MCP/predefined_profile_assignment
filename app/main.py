@@ -1,4 +1,9 @@
-# app/main.py
+"""FastAPI Application Entry Point.
+
+This module creates and configures the FastAPI application instance,
+including middleware setup, router registration, and application lifecycle
+event handlers for database initialization.
+"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,11 +16,16 @@ from app.api.ranking_state_routes import router as ranking_state_router
 
 
 def create_app() -> FastAPI:
-    """
-    Create and configure the FastAPI application.
+    """Create and configure FastAPI application instance.
+    
+    Sets up:
+    - Logging configuration
+    - FastAPI app with metadata
+    - CORS middleware for cross-origin requests
+    - API route registration
     
     Returns:
-        FastAPI: Configured application instance
+        FastAPI: Configured application instance ready to serve requests.
     """
     # Initialize logging
     setup_logging()
@@ -38,13 +48,12 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],          # ⚠️ Only for development!
-        allow_credentials=False,      # Must be False when using "*"
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # Register routers
     app.include_router(predefined_profile_router)
     app.include_router(user_router)
     app.include_router(ranking_state_router)
@@ -57,9 +66,10 @@ app = create_app()
 
 @app.on_event("startup")
 def on_startup():
-    """
-    Initialize database schema on first startup.
-    Safe to run multiple times.
+    """Initialize database schema and seed data on application startup.
+    
+    Executes database initialization including table creation and reference
+    data seeding. Safe to run multiple times due to idempotent operations.
     """
     init_db()
 

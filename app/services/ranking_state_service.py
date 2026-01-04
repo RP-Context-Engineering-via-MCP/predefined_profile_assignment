@@ -1,7 +1,7 @@
-"Ranking state business logic service.
+"""Ranking state business logic service.
 
 Provides high-level operations for ranking state management including
-drift detection, statistics aggregation, and observation tracking."
+drift detection, statistics aggregation, and observation tracking."""
 
 from sqlalchemy.orm import Session
 from app.repositories.ranking_state_repo import RankingStateRepository

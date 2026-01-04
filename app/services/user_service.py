@@ -1,7 +1,7 @@
-"User business logic service.
+"""User business logic service.
 
 Provides high-level user operations including authentication,
-registration, OAuth handling, and profile management."
+registration, OAuth handling, and profile management."""
 
 from sqlalchemy.orm import Session
 from app.repositories.user_repo import UserRepository
