@@ -1,4 +1,7 @@
-# app/services/user_service.py
+"User business logic service.
+
+Provides high-level user operations including authentication,
+registration, OAuth handling, and profile management."
 
 from sqlalchemy.orm import Session
 from app.repositories.user_repo import UserRepository
@@ -15,65 +18,67 @@ from app.models.user import User
 
 
 class UserService:
-    """Service layer for user business logic"""
+    """User business logic service.
+    
+    Orchestrates user operations including password management,
+    authentication, OAuth integration, and account lifecycle.
+    
+    Attributes:
+        repo: User repository
+    """
 
     def __init__(self, db: Session):
+        """Initialize service with database session.
+        
+        Args:
+            db: Active SQLAlchemy session
+        """
         self.repo = UserRepository(db)
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """
-        Hash a password using bcrypt
+        """Hash password using bcrypt.
         
         Args:
             password: Plain text password
             
         Returns:
-            str: Hashed password
+            Bcrypt hashed password string
         """
-        # Encode password to bytes and truncate to 72 bytes (bcrypt limit)
         password_bytes = password.encode('utf-8')[:72]
-        # Generate salt and hash
         salt = bcrypt.gensalt()
         hashed = bcrypt.hashpw(password_bytes, salt)
-        # Return as string
         return hashed.decode('utf-8')
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """
-        Verify a password against a hash
+        """Verify password against bcrypt hash.
         
         Args:
             plain_password: Plain text password to verify
-            hashed_password: Hashed password to compare against
+            hashed_password: Bcrypt hash to compare against
             
         Returns:
-            bool: True if password matches, False otherwise
+            True if password matches, False otherwise
         """
-        # Encode both passwords to bytes
         password_bytes = plain_password.encode('utf-8')[:72]
         hashed_bytes = hashed_password.encode('utf-8')
-        # Verify
         return bcrypt.checkpw(password_bytes, hashed_bytes)
 
     def create_user(self, user_data: UserCreateRequest) -> User:
-        """
-        Create a new user with hashed password
+        """Create new user with hashed password.
         
         Args:
-            user_data: User creation data
+            user_data: User creation request
             
         Returns:
-            User: Created user object
+            Created User object
             
         Raises:
             ValueError: If username or email already exists
         """
-        # Hash the password
         password_hash = self.hash_password(user_data.password)
         
-        # Create user
         user = self.repo.create_user(
             username=user_data.username,
             email=user_data.email,
@@ -88,14 +93,13 @@ class UserService:
         return user
 
     def authenticate_user(self, login_data: UserLoginRequest) -> Optional[User]:
-        """
-        Authenticate a user
+        """Authenticate user with credentials.
         
         Args:
-            login_data: Login credentials
+            login_data: Login credentials (username and password)
             
         Returns:
-            User if authentication successful, None otherwise
+            User object if authentication successful, None otherwise
         """
         user = self.repo.get_user_by_username(login_data.username)
         
@@ -105,55 +109,70 @@ class UserService:
         if not self.verify_password(login_data.password, user.password_hash):
             return None
         
-        # Check if user is active
         if user.status != "active":
             return None
         
         return user
 
     def get_user_by_id(self, user_id: str) -> Optional[User]:
-        """Get user by ID"""
+        """Retrieve user by unique identifier.
+        
+        Args:
+            user_id: User UUID
+            
+        Returns:
+            User object or None
+        """
         return self.repo.get_user_by_id(user_id)
 
     def get_user_by_username(self, username: str) -> Optional[User]:
-        """Get user by username"""
+        """Retrieve user by username.
+        
+        Args:
+            username: Unique username
+            
+        Returns:
+            User object or None
+        """
         return self.repo.get_user_by_username(username)
 
     def get_user_by_email(self, email: str) -> Optional[User]:
-        """Get user by email"""
+        """Retrieve user by email address.
+        
+        Args:
+            email: User's email
+            
+        Returns:
+            User object or None
+        """
         return self.repo.get_user_by_email(email)
 
     def oauth_login_or_register(self, email: str, name: str, provider: str, provider_id: str, picture: Optional[str] = None) -> Tuple[User, bool]:
-        """
-        Handle OAuth login or registration
+        """Handle OAuth login or registration.
         
-        Checks if a user exists with the given email or provider credentials:
-        - If exists by email or provider: returns the existing user
-        - If not exists: creates a new OAuth user
+        Checks if user exists by email or provider credentials:
+        - If exists: returns existing user (updates OAuth info)
+        - If not exists: creates new OAuth user
         
         Args:
             email: User's email from OAuth provider
             name: User's full name from OAuth provider
-            provider: OAuth provider name (e.g., 'google', 'github')
-            provider_id: OAuth provider's user ID
+            provider: OAuth provider name (google, github, etc.)
+            provider_id: OAuth provider's unique user ID
             picture: Profile picture URL (optional)
             
         Returns:
-            Tuple[User, bool]: (User object, is_new_user flag)
+            Tuple of (User object, is_new_user flag)
         """
-        # First, check if user exists by provider and provider_id
         existing_user = self.repo.get_user_by_provider(provider, provider_id)
         
         if existing_user:
-            # User exists with this OAuth provider - update last login
             self.repo.update_last_login(existing_user.user_id)
             return existing_user, False
         
-        # Second, check if user exists by email (might have registered with password)
         existing_user = self.repo.get_user_by_email(email)
         
         if existing_user:
-            # User exists with this email - update OAuth info and last login
             existing_user.provider = provider
             existing_user.provider_id = provider_id
             if picture:
@@ -165,11 +184,8 @@ class UserService:
             self.repo.update_last_login(existing_user.user_id)
             return existing_user, False
         
-        # User doesn't exist - create new OAuth user
-        # Use email as username for OAuth users (or extract from email)
         username = email.split('@')[0]
         
-        # Check if username exists, if so append numbers
         base_username = username
         counter = 1
         while self.repo.get_user_by_username(username):
@@ -179,14 +195,13 @@ class UserService:
         user = self.repo.create_user(
             username=username,
             email=email,
-            password_hash=None,  # OAuth users don't have passwords
+            password_hash=None,
             name=name,
             picture=picture,
             provider=provider,
             provider_id=provider_id
         )
         
-        # Set last login for new user
         self.repo.update_last_login(user.user_id)
         
         return user, True
@@ -198,17 +213,16 @@ class UserService:
         status: Optional[str] = None,
         search: Optional[str] = None
     ) -> Tuple[List[User], int]:
-        """
-        List users with filtering and pagination
+        """List users with filtering and pagination.
         
         Args:
             skip: Number of records to skip
-            limit: Maximum number of records to return
-            status: Filter by status
+            limit: Maximum records to return
+            status: Filter by status (active, suspended, deleted)
             search: Search by username or email
             
         Returns:
-            Tuple of (users list, total count)
+            Tuple of (user list, total count)
         """
         if search:
             return self.repo.search_users(search, skip=skip, limit=limit)
@@ -218,41 +232,37 @@ class UserService:
             return self.repo.get_all_users(skip=skip, limit=limit)
 
     def update_user(self, user_id: str, user_data: UserUpdateRequest) -> User:
-        """
-        Update user
+        """Update user with partial data.
         
         Args:
-            user_id: User ID to update
-            user_data: Updated user data
+            user_id: User UUID to update
+            user_data: Update request with new values
             
         Returns:
-            User: Updated user object
+            Updated User object
             
         Raises:
-            ValueError: If user not found or validation fails
+            ValueError: If no fields to update or user not found
         """
-        # Filter out None values
         update_dict = {k: v for k, v in user_data.dict().items() if v is not None}
         
         if not update_dict:
             raise ValueError("No fields to update")
         
-        # Hash password if provided
         if "password" in update_dict:
             update_dict["password_hash"] = self.hash_password(update_dict.pop("password"))
         
         return self.repo.update_user(user_id, **update_dict)
 
     def delete_user(self, user_id: str, hard_delete: bool = False) -> bool:
-        """
-        Delete user
+        """Delete user (soft or hard).
         
         Args:
-            user_id: User ID to delete
-            hard_delete: Whether to permanently delete
+            user_id: User UUID to delete
+            hard_delete: If True, permanent deletion; if False, soft delete
             
         Returns:
-            bool: True if successful
+            True if successful
         """
         return self.repo.delete_user(user_id, hard_delete=hard_delete)
 
@@ -262,28 +272,26 @@ class UserService:
         fallback_profile_id: str, 
         reason: str
     ) -> User:
-        """
-        Activate fallback profile for drift handling
+        """Activate fallback profile for drift handling.
         
         Args:
-            user_id: User ID
-            fallback_profile_id: Profile ID to fallback to
-            reason: Reason for fallback
+            user_id: User UUID
+            fallback_profile_id: Profile to fall back to
+            reason: Explanation for fallback activation
             
         Returns:
-            User: Updated user object
+            Updated User object
         """
         return self.repo.activate_fallback_profile(user_id, fallback_profile_id, reason)
 
     def deactivate_fallback_profile(self, user_id: str) -> User:
-        """
-        Deactivate fallback profile
+        """Deactivate fallback profile.
         
         Args:
-            user_id: User ID
+            user_id: User UUID
             
         Returns:
-            User: Updated user object
+            Updated User object
         """
         return self.repo.deactivate_fallback_profile(user_id)
 
@@ -293,43 +301,39 @@ class UserService:
         old_password: str, 
         new_password: str
     ) -> User:
-        """
-        Change user password
+        """Change user password with verification.
         
         Args:
-            user_id: User ID
-            old_password: Current password
-            new_password: New password
+            user_id: User UUID
+            old_password: Current password for verification
+            new_password: New password to set
             
         Returns:
-            User: Updated user object
+            Updated User object
             
         Raises:
-            ValueError: If old password is incorrect
+            ValueError: If old password incorrect or user not found
         """
         user = self.repo.get_user_by_id(user_id)
         
         if not user:
             raise ValueError(f"User with id {user_id} not found")
         
-        # Verify old password
         if not self.verify_password(old_password, user.password_hash):
             raise ValueError("Incorrect current password")
         
-        # Update password
         new_password_hash = self.hash_password(new_password)
         return self.repo.update_user(user_id, password_hash=new_password_hash)
 
     def suspend_user(self, user_id: str, reason: Optional[str] = None) -> User:
-        """
-        Suspend a user account
+        """Suspend user account.
         
         Args:
-            user_id: User ID
+            user_id: User UUID
             reason: Reason for suspension
             
         Returns:
-            User: Updated user object
+            Updated User object
         """
         update_data = {"status": "suspended"}
         if reason:
@@ -338,13 +342,12 @@ class UserService:
         return self.repo.update_user(user_id, **update_data)
 
     def activate_user(self, user_id: str) -> User:
-        """
-        Activate a suspended user account
+        """Activate suspended user account.
         
         Args:
-            user_id: User ID
+            user_id: User UUID
             
         Returns:
-            User: Updated user object
+            Updated User object
         """
         return self.repo.update_user(user_id, status="active")

@@ -1,14 +1,7 @@
-# app/services/consistency_calculator.py
+"""Session-level consistency calculator.
 
-"""
-Consistency Calculator for Session-Level Consistency Scoring
-
-Computes user consistency (0-1 scale) based on:
-- Repeated intent across prompts
-- Domain stability across prompts
-- Session duration
-- Return frequency (if session history available)
-- Pattern consistency
+Computes user behavioral consistency (0-1 scale) across multiple prompts,
+analyzing intent repetition, domain stability, and temporal patterns.
 """
 
 from typing import Dict, List, Optional
@@ -18,11 +11,10 @@ from app.core.logging_config import calculator_logger
 
 
 class ConsistencyCalculator:
-    """
-    Calculates session-level consistency from behavioral patterns.
+    """Behavioral consistency analysis service.
     
-    Analyzes user behavior patterns across multiple prompts to determine
-    consistency in intents, domains, and interaction styles.
+    Analyzes user behavior patterns across sessions to determine consistency
+    in intents, domains, and interaction styles over time.
     """
     
     @staticmethod
@@ -31,28 +23,28 @@ class ConsistencyCalculator:
         domain_history: List[str],
         signal_history: Optional[List[Dict]] = None
     ) -> float:
-        """
-        Compute consistency from session history.
+        """Compute consistency from session behavioral history.
         
-        Analyzes:
-        - Intent repetition (how often same intent is used)
-        - Domain stability (how often same domain is used)
-        - Temporal consistency (pattern maintenance over time)
-        - Signal consistency (behavioral style stability - optional)
+        Analyzes multiple consistency dimensions:
+        - Intent repetition: frequency of same intent usage
+        - Domain stability: frequency of same domain usage
+        - Temporal consistency: pattern maintenance over time
+        - Signal consistency: behavioral style stability (optional)
+        
+        Single-prompt sessions return default consistency (no pattern yet).
         
         Args:
-            intent_history: List of intents from each prompt (chronological)
-            domain_history: List of domains from each prompt (chronological)
-            signal_history: Optional list of signal dicts from each prompt
+            intent_history: Chronologically ordered list of intents
+            domain_history: Chronologically ordered list of domains
+            signal_history: Optional list of signal dictionaries per prompt
             
         Returns:
-            float: Consistency score (0.0 = no pattern, 1.0 = highly consistent)
+            Consistency score from 0.0 (no pattern) to 1.0 (highly consistent)
         """
         if not intent_history or len(intent_history) == 0:
             calculator_logger.debug("No intent history, returning default consistency")
             return DefaultValues.DEFAULT_CONSISTENCY
         
-        # Special case: single prompt has no consistency pattern yet
         if len(intent_history) == 1:
             calculator_logger.debug("Single prompt, returning default consistency")
             return DefaultValues.DEFAULT_CONSISTENCY
@@ -103,18 +95,17 @@ class ConsistencyCalculator:
     
     @staticmethod
     def _calculate_repetition_score(history: List[str], weight: float = 1.0) -> float:
-        """
-        Calculate repetition score based on frequency distribution.
+        """Calculate repetition-based consistency score.
         
-        High frequency of one item = high consistency
-        Equal distribution = low consistency
+        High frequency of single item indicates high consistency.
+        Equal distribution indicates low consistency.
         
         Args:
             history: List of items (intents, domains, etc.)
-            weight: Maximum weight to apply
+            weight: Maximum score weight to apply
             
         Returns:
-            float: Repetition score (0-weight)
+            Repetition score from 0 to weight
         """
         if not history or len(history) == 0:
             return 0.0
@@ -153,19 +144,18 @@ class ConsistencyCalculator:
         domain_history: List[str],
         weight: float = 1.0
     ) -> float:
-        """
-        Calculate if pattern is consistent over time (not just repetition).
+        """Calculate temporal pattern consistency.
         
-        Checks if recent prompts maintain same intent/domain as earlier ones.
-        Measures transition stability.
+        Measures if patterns remain stable over time,
+        checking transition stability between prompts.
         
         Args:
-            intent_history: List of intents over time
-            domain_history: List of domains over time
-            weight: Maximum weight to apply
+            intent_history: Chronological intent list
+            domain_history: Chronological domain list
+            weight: Maximum score weight to apply
             
         Returns:
-            float: Temporal consistency score (0-weight)
+            Temporal consistency score from 0 to weight
         """
         if not intent_history or len(intent_history) < 2:
             return 0.0
@@ -188,17 +178,16 @@ class ConsistencyCalculator:
     
     @staticmethod
     def _calculate_transition_stability(history: List[str]) -> float:
-        """
-        Measure stability of transitions (how often we stay with same item).
+        """Measure transition stability in sequential data.
         
-        Low transitions = high stability
-        Many transitions = low stability
+        Low transitions (staying with same item) = high stability.
+        Many transitions (frequent changes) = low stability.
         
         Args:
             history: Ordered list of items
             
         Returns:
-            float: Stability score (0-1)
+            Stability score from 0.0 to 1.0
         """
         if len(history) < 2:
             return 1.0
@@ -222,15 +211,16 @@ class ConsistencyCalculator:
         signal_history: List[Dict],
         weight: float = 1.0
     ) -> float:
-        """
-        Calculate signal consistency (behavior style stability).
+        """Calculate behavioral signal consistency.
+        
+        Analyzes stability of dominant interaction style signals.
         
         Args:
-            signal_history: List of signal dicts from each prompt
-            weight: Maximum weight to apply
+            signal_history: List of signal dictionaries per prompt
+            weight: Maximum score weight to apply
             
         Returns:
-            float: Signal consistency score (0-weight)
+            Signal consistency score from 0 to weight
         """
         if not signal_history or len(signal_history) == 0:
             return 0.0
@@ -259,19 +249,19 @@ class ConsistencyCalculator:
                                    current_domain: str,
                                    intent_history: List[str],
                                    domain_history: List[str]) -> float:
-        """
-        Quick consistency score: how much does current prompt match history?
+        """Compute incremental consistency from current prompt.
         
-        Useful for incremental updates.
+        Quick consistency check: how well does current prompt match history?
+        Useful for real-time consistency updates.
         
         Args:
             current_intent: Current prompt's intent
             current_domain: Current prompt's domain
-            intent_history: Previous intents
-            domain_history: Previous domains
+            intent_history: Previous intent history
+            domain_history: Previous domain history
             
         Returns:
-            float: Match score (0-1)
+            Match score from 0.0 to 1.0
         """
         if not intent_history or len(intent_history) == 0:
             return 0.5  # Default neutral
@@ -295,15 +285,17 @@ class ConsistencyCalculator:
     @staticmethod
     def compute_summary(intent_history: List[str],
                        domain_history: List[str]) -> Dict:
-        """
-        Return detailed consistency breakdown.
+        """Generate detailed consistency breakdown.
+        
+        Provides comprehensive consistency analysis with metrics
+        for intent and domain patterns.
         
         Args:
             intent_history: List of intents
             domain_history: List of domains
             
         Returns:
-            dict: Consistency metrics breakdown
+            Dictionary with consistency metrics breakdown
         """
         intent_counter = Counter(intent_history)
         domain_counter = Counter(domain_history)

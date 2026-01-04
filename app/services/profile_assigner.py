@@ -1,4 +1,7 @@
-# app/services/profile_assigner.py
+"Profile assignment orchestration service.
+
+Coordinates profile matching, ranking state management, and assignment decisions
+for both cold-start and drift-fallback scenarios."
 
 from app.services.profile_matcher import ProfileMatcher
 from app.services.consistency_calculator import ConsistencyCalculator
@@ -9,22 +12,46 @@ from typing import Optional, Tuple, Union, List
 
 
 class ProfileAssigner:
+    """Profile assignment orchestration service.
+    
+    Manages end-to-end profile assignment workflow including matching,
+    ranking state updates, and assignment decision logic.
+    
+    Attributes:
+        repo: Predefined profile repository
+        ranking_service: Ranking state service
+        user_repo: User repository
+        db: Database session
+    """
 
     def __init__(self, db):
+        """Initialize profile assigner with database session.
+        
+        Args:
+            db: Active SQLAlchemy session
+        """
         self.repo = PredefinedProfileRepository(db)
         self.ranking_service = RankingStateService(db)
         self.user_repo = UserRepository(db)
         self.db = db
 
     def get_assignment_status(self, user_id: str) -> dict:
-        """
-        Get current profile assignment status for a user without performing new assignment.
+        """Retrieve current profile assignment status without triggering new assignment.
+        
+        Provides comprehensive view of user's profile assignment state including
+        confidence level, mode, and aggregated ranking statistics.
         
         Args:
-            user_id: User ID to retrieve status for
+            user_id: User unique identifier
             
         Returns:
-            Dict with status, confidence_level, user_mode, prompt_count, assigned_profile_id, aggregated_rankings
+            Dictionary containing:
+                - status: ASSIGNED, PENDING, or NOT_FOUND
+                - confidence_level: HIGH, MEDIUM, LOW, or NONE
+                - user_mode: Current profile mode
+                - prompt_count: Number of processed prompts
+                - assigned_profile_id: Currently assigned profile or None
+                - aggregated_rankings: List of all profile ranking states
         """
         # Get user to check assigned profile
         user = self.user_repo.get_user_by_id(user_id)
@@ -100,15 +127,21 @@ class ProfileAssigner:
         cold_threshold: float = 0.60,
         fallback_threshold: float = 0.70
     ) -> Tuple[bool, Optional[str], float]:
-        """
-        Decide if profile should be assigned based on accumulated ranking state.
-
+        """Determine if profile should be assigned based on ranking state.
+        
+        Applies different criteria for cold-start vs drift-fallback scenarios:
+        - Cold-start: requires min_prompts, cold_threshold, and 2+ consecutive tops
+        - Drift-fallback: requires fallback_threshold and 3+ consecutive tops
+        
         Args:
-            user_id: User ID
-            user_mode: 'COLD_START' or 'DRIFT_FALLBACK'
-            min_prompts: Minimum observations required (cold-start uses the provided value)
-            cold_threshold: Average score threshold for cold-start assignment
-            fallback_threshold: Average score threshold for fallback assignment
+            user_id: User unique identifier
+            user_mode: Assignment mode (COLD_START or DRIFT_FALLBACK)
+            min_prompts: Minimum observations required for cold-start
+            cold_threshold: Average score threshold for cold-start (default 0.60)
+            fallback_threshold: Average score threshold for drift-fallback (default 0.70)
+            
+        Returns:
+            Tuple of (should_assign, profile_id, average_score)
         """
         top_states = self.ranking_service.get_top_profiles_for_user(user_id, limit=1)
         if not top_states:
@@ -117,16 +150,13 @@ class ProfileAssigner:
         best = top_states[0]
 
         if user_mode == 'COLD_START':
-            # Cold-start: wait for required prompts (external caller sets this, e.g., 5)
             if best.observation_count < min_prompts:
                 return False, None, best.average_score
 
-            # Stability + threshold
             if best.average_score >= cold_threshold and best.consecutive_top_count >= 2:
                 return True, best.profile_id, best.average_score
 
         elif user_mode == 'DRIFT_FALLBACK':
-            # Fallback: require threshold and stability (consecutive top ranking)
             if best.average_score >= fallback_threshold and best.consecutive_top_count >= 3:
                 return True, best.profile_id, best.average_score
 
@@ -138,16 +168,26 @@ class ProfileAssigner:
         user_id: str,
         user_mode: str = 'COLD_START'
     ) -> dict:
-        """
-        Assign profiles based on extracted behavior and update ranking state.
+        """Assign profile based on extracted behavioral data.
+        
+        Main orchestration method that:
+        1. Loads profiles and matching factors
+        2. Processes behavior(s) through profile matcher
+        3. Updates ranking state with results
+        4. Determines if assignment criteria met
+        5. Persists assignment if applicable
         
         Args:
-            extracted_behavior: Single behavior dict for COLD_START or list of behavior dicts for DRIFT_FALLBACK
-                               Each dict contains: (intents, interests, signals, behavior_level, consistency, complexity)
-            user_id: User ID for ranking state persistence
-            user_mode: 'COLD_START' or 'DRIFT_FALLBACK'
+            extracted_behavior: Single behavior dict (COLD_START) or list of dicts (DRIFT_FALLBACK).
+                Each dict contains: intents, interests, signals, behavior_level, 
+                consistency, complexity
+            user_id: User unique identifier for ranking persistence
+            user_mode: Assignment mode (COLD_START or DRIFT_FALLBACK)
             
         Returns:
+            Dictionary containing assignment status, confidence, mode, prompt_count,
+            assigned_profile_id, and aggregated_rankings
+        """
             Dict with status, confidence_level, user_mode, prompt_count, assigned_profile_id, aggregated_rankings
         """
         # Load profiles and matching factors

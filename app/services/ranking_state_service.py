@@ -1,4 +1,7 @@
-# app/services/ranking_state_service.py
+"Ranking state business logic service.
+
+Provides high-level operations for ranking state management including
+drift detection, statistics aggregation, and observation tracking."
 
 from sqlalchemy.orm import Session
 from app.repositories.ranking_state_repo import RankingStateRepository
@@ -16,23 +19,34 @@ from datetime import datetime
 
 
 class RankingStateService:
-    """Service layer for ranking state business logic"""
+    """Ranking state business logic service.
+    
+    Orchestrates ranking state operations including CRUD, drift detection,
+    and statistical analysis for profile matching evolution.
+    
+    Attributes:
+        repo: Ranking state repository
+    """
 
     def __init__(self, db: Session):
+        """Initialize service with database session.
+        
+        Args:
+            db: Active SQLAlchemy session
+        """
         self.repo = RankingStateRepository(db)
 
     def create_ranking_state(
         self,
         state_data: RankingStateCreateRequest
     ) -> UserProfileRankingState:
-        """
-        Create a new ranking state
+        """Create new ranking state.
         
         Args:
-            state_data: Ranking state creation data
+            state_data: Ranking state creation request
             
         Returns:
-            UserProfileRankingState: Created ranking state
+            Created UserProfileRankingState object
         """
         return self.repo.create_ranking_state(
             user_id=state_data.user_id,
@@ -50,7 +64,14 @@ class RankingStateService:
         self,
         state_id: str
     ) -> Optional[UserProfileRankingState]:
-        """Get ranking state by ID"""
+        """Retrieve ranking state by unique identifier.
+        
+        Args:
+            state_id: Ranking state UUID
+            
+        Returns:
+            UserProfileRankingState object or None
+        """
         return self.repo.get_ranking_state_by_id(state_id)
 
     def get_ranking_state_by_user_profile(
@@ -58,7 +79,15 @@ class RankingStateService:
         user_id: str,
         profile_id: str
     ) -> Optional[UserProfileRankingState]:
-        """Get ranking state by user and profile"""
+        """Retrieve ranking state by user-profile pair.
+        
+        Args:
+            user_id: User unique identifier
+            profile_id: Profile unique identifier
+            
+        Returns:
+            UserProfileRankingState object or None
+        """
         return self.repo.get_ranking_state_by_user_profile(user_id, profile_id)
 
     def get_all_states_for_user(
@@ -67,7 +96,16 @@ class RankingStateService:
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[UserProfileRankingState], int]:
-        """Get all ranking states for a user"""
+        """Retrieve all ranking states for user with pagination.
+        
+        Args:
+            user_id: User unique identifier
+            skip: Number of records to skip
+            limit: Maximum records to return
+            
+        Returns:
+            Tuple of (ranking state list, total count)
+        """
         return self.repo.get_all_states_for_user(user_id, skip, limit)
 
     def get_all_states_for_profile(
@@ -76,7 +114,16 @@ class RankingStateService:
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[UserProfileRankingState], int]:
-        """Get all ranking states for a profile"""
+        """Retrieve all ranking states for profile with pagination.
+        
+        Args:
+            profile_id: Profile unique identifier
+            skip: Number of records to skip
+            limit: Maximum records to return
+            
+        Returns:
+            Tuple of (ranking state list, total count)
+        """
         return self.repo.get_all_states_for_profile(profile_id, skip, limit)
 
     def update_ranking_state(
@@ -84,7 +131,18 @@ class RankingStateService:
         state_id: str,
         state_data: RankingStateUpdateRequest
     ) -> UserProfileRankingState:
-        """Update ranking state"""
+        """Update ranking state with partial data.
+        
+        Args:
+            state_id: Ranking state UUID
+            state_data: Update request with new values
+            
+        Returns:
+            Updated UserProfileRankingState object
+            
+        Raises:
+            ValueError: If no fields to update
+        """
         update_dict = {k: v for k, v in state_data.dict().items() if v is not None}
         
         if not update_dict:
@@ -98,16 +156,15 @@ class RankingStateService:
         profile_id: str,
         score_data: ScoreUpdateRequest
     ) -> UserProfileRankingState:
-        """
-        Add a new score observation and update statistics
+        """Add new score observation and update aggregated statistics.
         
         Args:
-            user_id: User ID
-            profile_id: Profile ID
+            user_id: User unique identifier
+            profile_id: Profile unique identifier
             score_data: New score and rank data
             
         Returns:
-            UserProfileRankingState: Updated ranking state
+            Updated UserProfileRankingState object
         """
         return self.repo.add_observation(
             user_id=user_id,
@@ -121,13 +178,13 @@ class RankingStateService:
         user_id: str,
         ranked_profiles: List[Tuple[str, float]]
     ) -> List[UserProfileRankingState]:
-        """
-        Update ranking state table using a full ranked profile list
-        (called once per prompt)
-
+        """Update ranking state table from full ranked profile list.
+        
+        Called once per prompt to update all profile rankings simultaneously.
+        
         Args:
-            user_id: User ID
-            ranked_profiles: List of (profile_id, score) tuples sorted DESC by score
+            user_id: User unique identifier
+            ranked_profiles: List of (profile_id, score) tuples sorted descending by score
             
         Returns:
             List of updated ranking states
@@ -144,7 +201,6 @@ class RankingStateService:
                 )
                 updated_states.append(state)
             except Exception as e:
-                # Log error but continue with other observations
                 print(f"Error adding observation for profile {profile_id}: {e}")
         
         return updated_states
@@ -154,18 +210,25 @@ class RankingStateService:
         user_id: str,
         limit: int = 5
     ) -> List[UserProfileRankingState]:
-        """Get top N profiles for a user"""
+        """Retrieve top N profiles for user.
+        
+        Args:
+            user_id: User unique identifier
+            limit: Maximum number of top profiles
+            
+        Returns:
+            List of top-ranked UserProfileRankingState objects
+        """
         return self.repo.get_top_ranked_profiles_for_user(user_id, limit)
 
     def get_user_stats_summary(self, user_id: str) -> RankingStatsSummary:
-        """
-        Get summary statistics for a user's ranking states
+        """Generate summary statistics for user's ranking states.
         
         Args:
-            user_id: User ID
+            user_id: User unique identifier
             
         Returns:
-            RankingStatsSummary: Summary statistics
+            RankingStatsSummary with aggregated metrics
         """
         states, total = self.repo.get_all_states_for_user(user_id, limit=1000)
         
@@ -178,16 +241,13 @@ class RankingStateService:
                 profiles_with_drift=0
             )
         
-        # Find top ranked profile
         top_profile = max(states, key=lambda s: s.average_score)
         
-        # Count profiles with drift (using thresholds)
         drift_count = len([
             s for s in states 
             if s.consecutive_top_count >= 3 or s.consecutive_drop_count >= 3
         ])
         
-        # Total observations across all profiles
         total_obs = sum(s.observation_count for s in states)
         
         return RankingStatsSummary(
@@ -206,17 +266,22 @@ class RankingStateService:
         top_threshold: int = 3,
         drop_threshold: int = 3
     ) -> DriftDetectionResponse:
-        """
-        Detect drift signals for a specific user-profile combination
+        """Detect drift signals for user-profile combination.
+        
+        Checks for score degradation, consistent top performance,
+        consistent drops, and volatility patterns.
         
         Args:
-            user_id: User ID
-            profile_id: Profile ID
-            top_threshold: Consecutive top count threshold
-            drop_threshold: Consecutive drop count threshold
+            user_id: User unique identifier
+            profile_id: Profile unique identifier
+            top_threshold: Consecutive top count threshold (default 3)
+            drop_threshold: Consecutive drop count threshold (default 3)
             
         Returns:
-            DriftDetectionResponse: Drift detection analysis
+            DriftDetectionResponse with drift analysis
+            
+        Raises:
+            ValueError: If no ranking state found
         """
         state = self.repo.get_ranking_state_by_user_profile(user_id, profile_id)
         
@@ -227,26 +292,22 @@ class RankingStateService:
         drift_type = None
         recommendation = "Continue monitoring"
         
-        # Per fullplan.txt section 8: Check score degradation first
         DRIFT_CONF_THRESHOLD = 0.50
         if state.average_score < DRIFT_CONF_THRESHOLD:
             has_drift = True
             drift_type = "score_degradation"
             recommendation = "Profile confidence has degraded significantly - consider fallback"
         
-        # Check for consistent top performance
         elif state.consecutive_top_count >= top_threshold:
             has_drift = True
             drift_type = "consistent_top"
             recommendation = "Consider switching to DYNAMIC_ONLY mode"
         
-        # Check for consistent drops
         elif state.consecutive_drop_count >= drop_threshold:
             has_drift = True
             drift_type = "consistent_drop"
             recommendation = "Consider activating fallback profile"
         
-        # Check for volatility
         elif (state.consecutive_top_count > 0 and state.consecutive_drop_count > 0):
             has_drift = True
             drift_type = "volatile"
@@ -267,22 +328,23 @@ class RankingStateService:
         user_id: str,
         profile_id: str
     ) -> ProfileRankingHistory:
-        """
-        Get ranking history analysis for a profile
+        """Get ranking history analysis for profile.
         
         Args:
-            user_id: User ID
-            profile_id: Profile ID
+            user_id: User unique identifier
+            profile_id: Profile unique identifier
             
         Returns:
-            ProfileRankingHistory: Historical ranking information
+            ProfileRankingHistory with temporal analysis
+            
+        Raises:
+            ValueError: If no ranking state found
         """
         state = self.repo.get_ranking_state_by_user_profile(user_id, profile_id)
         
         if not state:
             raise ValueError(f"No ranking state found for user {user_id} and profile {profile_id}")
         
-        # Determine score trend
         score_trend = "stable"
         if state.consecutive_top_count >= 2:
             score_trend = "improving"
@@ -305,19 +367,49 @@ class RankingStateService:
         top_threshold: int = 3,
         drop_threshold: int = 3
     ) -> List[UserProfileRankingState]:
-        """Get all ranking states with drift signals for a user"""
+        """Retrieve all ranking states with drift signals for user.
+        
+        Args:
+            user_id: User unique identifier
+            top_threshold: Consecutive top threshold
+            drop_threshold: Consecutive drop threshold
+            
+        Returns:
+            List of UserProfileRankingState objects with drift
+        """
         return self.repo.get_states_with_drift(user_id, top_threshold, drop_threshold)
 
     def reset_drift_counters(self, state_id: str) -> UserProfileRankingState:
-        """Reset drift counters for a ranking state"""
+        """Reset drift counters after manual intervention.
+        
+        Args:
+            state_id: Ranking state UUID
+            
+        Returns:
+            Updated UserProfileRankingState object
+        """
         return self.repo.reset_drift_counters(state_id)
 
     def delete_ranking_state(self, state_id: str) -> bool:
-        """Delete a ranking state"""
+        """Delete ranking state permanently.
+        
+        Args:
+            state_id: Ranking state UUID
+            
+        Returns:
+            True if deletion successful
+        """
         return self.repo.delete_ranking_state(state_id)
 
     def delete_all_states_for_user(self, user_id: str) -> int:
-        """Delete all ranking states for a user"""
+        """Delete all ranking states for user.
+        
+        Args:
+            user_id: User unique identifier
+            
+        Returns:
+            Number of states deleted
+        """
         return self.repo.delete_all_states_for_user(user_id)
 
     def batch_add_observations(
@@ -325,11 +417,10 @@ class RankingStateService:
         user_id: str,
         observations: List[dict]
     ) -> List[UserProfileRankingState]:
-        """
-        Add multiple observations in batch
+        """Add multiple observations in batch.
         
         Args:
-            user_id: User ID
+            user_id: User unique identifier
             observations: List of dicts with profile_id, score, and rank
             
         Returns:
@@ -347,7 +438,6 @@ class RankingStateService:
                 )
                 updated_states.append(state)
             except Exception as e:
-                # Log error but continue with other observations
                 print(f"Error adding observation for profile {obs['profile_id']}: {e}")
         
         return updated_states
@@ -357,15 +447,14 @@ class RankingStateService:
         user_id: str,
         profile_ids: List[str]
     ) -> List[dict]:
-        """
-        Compare multiple profiles for a user
+        """Compare multiple profiles for user.
         
         Args:
-            user_id: User ID
+            user_id: User unique identifier
             profile_ids: List of profile IDs to compare
             
         Returns:
-            List of comparison data
+            List of comparison data sorted by average score
         """
         comparisons = []
         
@@ -384,7 +473,6 @@ class RankingStateService:
                     )
                 })
         
-        # Sort by average score descending
         comparisons.sort(key=lambda x: x['average_score'], reverse=True)
         
         return comparisons

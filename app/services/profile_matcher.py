@@ -1,4 +1,7 @@
-# app/services/profile_matcher.py
+"""Profile matching service.
+
+Scores and ranks predefined profiles against user behavioral data
+using weighted multi-factor matching algorithms."""
 
 from typing import Dict, List, Optional
 from app.models.profile import Profile
@@ -7,15 +10,18 @@ from app.core.logging_config import matcher_logger
 
 
 class ProfileMatcher:
-    """
-    Profile matching service that scores and ranks profiles based on user behavior.
+    """Profile matching and scoring service.
     
-    Uses weighted factor matching with support for both standard and cold-start modes.
+    Implements weighted factor matching with support for both standard
+    and cold-start (simplified) matching modes.
+    
+    Attributes:
+        weights: Standard matching weights (all factors)
+        cold_start_weights: Simplified cold-start weights (intent + interest only)
     """
 
     def __init__(self, matching_factors: Dict[str, float]):
-        """
-        Initialize ProfileMatcher with matching factor weights.
+        """Initialize matcher with custom factor weights.
         
         Args:
             matching_factors: Dictionary of factor weights to override defaults
@@ -38,25 +44,27 @@ class ProfileMatcher:
         extracted_behavior: Dict,
         is_cold_start: bool = False
     ) -> Dict:
-        """
-        Match user behavior against profiles and return ranked results.
+        """Match user behavior against profiles and return ranked results.
+        
+        Applies weighted scoring across multiple behavioral dimensions,
+        normalizes scores, and ranks profiles by match quality.
         
         Args:
-            profiles: List of Profile objects to match against
-            extracted_behavior: Dictionary containing:
+            profiles: List of Profile objects to evaluate
+            extracted_behavior: Behavioral data dictionary containing:
                 - intents: {intent_code: score}
                 - interests: {interest_code: score}
                 - behavior_level: str (e.g., "INTERMEDIATE")
                 - signals: {signal_code: score}
                 - consistency: float (0-1)
                 - complexity: float (0-1)
-            is_cold_start: If True, uses simplified cold-start weights
+            is_cold_start: If True, uses simplified weights (intent + interest only)
             
         Returns:
             Dictionary with:
-                - ranked_profiles: List of (profile_id, score) tuples
+                - ranked_profiles: List of (profile_id, score) tuples (descending)
                 - best_profile: ID of top-ranked profile
-                - confidence: Score of top-ranked profile
+                - confidence: Normalized score of top-ranked profile
         """
         # Select weights based on cold-start status
         active_weights = self.cold_start_weights if is_cold_start else self.weights
@@ -110,8 +118,9 @@ class ProfileMatcher:
         behavior: Dict, 
         weights: Dict
     ) -> float:
-        """
-        Calculate weighted score for a single profile.
+        """Calculate weighted score for single profile.
+        
+        Computes component scores for each dimension and applies weights.
         
         Args:
             profile: Profile object to score
@@ -119,7 +128,7 @@ class ProfileMatcher:
             weights: Factor weights to apply
             
         Returns:
-            float: Raw weighted score for the profile
+            Raw weighted score for the profile
         """
         intent_score = self._intent_score(profile, behavior["intents"])
         interest_score = self._interest_score(profile, behavior["interests"])
@@ -135,7 +144,6 @@ class ProfileMatcher:
             weights["CONSISTENCY"] * behavior["consistency"]
         )
         
-        # Log detailed breakdown
         matcher_logger.debug(
             f"\nProfile {profile.profile_id} - {profile.profile_name}:\n"
             f"  Intent: {intent_score:.3f} × {weights['INTENT']:.2f} = {weights['INTENT'] * intent_score:.3f}\n"
@@ -149,30 +157,60 @@ class ProfileMatcher:
         return raw_score
 
     def _intent_score(self, profile: Profile, intents: Dict) -> float:
-        """Calculate intent matching score for a profile."""
+        """Calculate weighted intent matching score.
+        
+        Args:
+            profile: Profile with intent associations
+            intents: User's intent scores
+            
+        Returns:
+            Aggregated intent match score
+        """
         return sum(
             intents.get(pi.intent.intent_name, 0) * float(pi.weight)
             for pi in profile.intents
         )
 
     def _interest_score(self, profile: Profile, interests: Dict) -> float:
-        """Calculate interest matching score for a profile."""
+        """Calculate weighted interest matching score.
+        
+        Args:
+            profile: Profile with interest associations
+            interests: User's interest scores
+            
+        Returns:
+            Aggregated interest match score
+        """
         return sum(
             interests.get(pint.interest.interest_name, 0) * float(pint.weight)
             for pint in profile.interests
         )
 
     def _behavior_level_score(self, profile: Profile, level: str) -> float:
-        """
-        Calculate behavior level matching score.
+        """Calculate behavior level matching score.
         
-        Returns 1.0 for exact match, default score otherwise.
+        Returns full score for exact match, default otherwise.
+        
+        Args:
+            profile: Profile with behavior level associations
+            level: User's behavior level
+            
+        Returns:
+            1.0 for exact match, default score otherwise
         """
         has_match = any(bl.level.level_name == level for bl in profile.behavior_levels)
         return 1.0 if has_match else DefaultValues.DEFAULT_BEHAVIOR_SCORE
 
     def _signal_score(self, profile: Profile, signals: Dict) -> float:
-        """Calculate behavioral signal matching score for a profile."""
+        """Calculate weighted behavioral signal matching score.
+        
+        Args:
+            profile: Profile with signal associations
+            signals: User's behavioral signal scores
+            
+        Returns:
+            Aggregated signal match score
+        """
         return sum(
             signals.get(ps.signal.signal_name, 0) * float(ps.weight)
             for ps in profile.behavior_signals

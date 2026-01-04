@@ -1,13 +1,7 @@
-# app/services/complexity_calculator.py
+"""Task complexity calculator.
 
-"""
-Complexity Calculator for Task Complexity Scoring
-
-Computes task complexity (0-1 scale) based on prompt characteristics:
-- Prompt length
-- Constraints specified
-- Multi-step instructions
-- Use of examples or structure
+Computes task complexity scores (0-1 scale) from prompt characteristics
+including length, constraints, multi-step indicators, and structural requirements.
 """
 
 from typing import Dict, Optional
@@ -16,29 +10,28 @@ from app.core.logging_config import calculator_logger
 
 
 class ComplexityCalculator:
-    """
-    Calculates task complexity from prompt characteristics.
+    """Task complexity analysis service.
     
-    Uses keyword detection and prompt analysis to score complexity on 0-1 scale.
+    Analyzes prompt text or behavioral signals to determine task complexity.
+    Uses keyword detection and weighted scoring for complexity assessment.
     """
     
     @staticmethod
     def compute_complexity(prompt_text: str) -> float:
-        """
-        Compute task complexity from prompt text.
+        """Compute task complexity from prompt text analysis.
         
-        Analyzes multiple factors:
-        - Word count (length)
-        - Constraint keywords
-        - Multi-step indicators
-        - Structural requirements
-        - Example usage
+        Evaluates multiple complexity indicators:
+        - Word count (length-based scoring)
+        - Constraint keywords ("must", "should", "required")
+        - Multi-step indicators ("first", "then", "finally")
+        - Structural requirements ("format", "template", "structure")
+        - Example usage ("example", "like", "such as")
         
         Args:
-            prompt_text: The user's prompt/request
+            prompt_text: User's prompt or request text
             
         Returns:
-            float: Complexity score (0.0 = simple, 1.0 = very complex)
+            Complexity score from 0.0 (simple) to 1.0 (very complex)
         """
         if not prompt_text or not isinstance(prompt_text, str):
             calculator_logger.debug(
@@ -119,21 +112,21 @@ class ComplexityCalculator:
     
     @staticmethod
     def _calculate_length_score(word_count: int) -> float:
-        """
-        Calculate complexity score based on word count.
+        """Calculate complexity contribution from word count.
+        
+        Uses linear scaling between low and high thresholds.
         
         Args:
             word_count: Number of words in prompt
             
         Returns:
-            float: Length-based complexity score
+            Length-based complexity component score
         """
         if word_count < ComplexityConstants.LOW_COMPLEXITY_THRESHOLD:
             return ComplexityConstants.LENGTH_MIN_SCORE
         elif word_count > ComplexityConstants.HIGH_COMPLEXITY_THRESHOLD:
             return ComplexityConstants.LENGTH_MAX_SCORE
         else:
-            # Linear scaling between thresholds
             normalized = (
                 (word_count - ComplexityConstants.LOW_COMPLEXITY_THRESHOLD) /
                 (ComplexityConstants.HIGH_COMPLEXITY_THRESHOLD - 
@@ -146,17 +139,16 @@ class ComplexityCalculator:
     
     @staticmethod
     def compute_complexity_from_signals(signals: Dict[str, float]) -> float:
-        """
-        Compute complexity from behavior signals.
+        """Compute complexity from behavioral signals.
         
-        Alternative method that derives complexity from behavioral signals
+        Alternative method deriving complexity from interaction style
         rather than prompt text analysis.
         
         Args:
-            signals: Dict of signal_name -> score
+            signals: Dictionary mapping signal names to scores
             
         Returns:
-            float: Complexity score (0.0 = simple, 1.0 = very complex)
+            Complexity score from 0.0 to 1.0
         """
         if not signals:
             calculator_logger.debug("No signals provided, returning default complexity")
