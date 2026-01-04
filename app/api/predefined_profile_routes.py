@@ -40,6 +40,9 @@ def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
     """
     Assign a profile based on extracted behavior and update ranking state.
     
+    For COLD_START mode: Pass a single behavior dict
+    For DRIFT_FALLBACK mode: Pass a list of behavior dicts to process multiple prompts at once
+    
     Args:
         payload: BehaviorInputDTO containing behavior data, user_id, and user_mode
         db: Database session dependency
@@ -52,6 +55,25 @@ def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
             status_code=400, 
             detail="user_id is required for profile assignment"
         )
+    
+    # Validate behavior based on user_mode
+    if payload.user_mode == 'DRIFT_FALLBACK':
+        if isinstance(payload.behavior, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="DRIFT_FALLBACK mode expects a list of behavior dicts, not a single dict"
+            )
+        if not isinstance(payload.behavior, list) or len(payload.behavior) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="DRIFT_FALLBACK mode requires at least one behavior dict in the list"
+            )
+    elif payload.user_mode == 'COLD_START':
+        if isinstance(payload.behavior, list):
+            raise HTTPException(
+                status_code=400,
+                detail="COLD_START mode expects a single behavior dict, not a list"
+            )
     
     assigner = ProfileAssigner(db)
     behavior = payload.behavior

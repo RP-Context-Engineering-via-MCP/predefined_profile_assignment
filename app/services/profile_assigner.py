@@ -5,7 +5,7 @@ from app.services.consistency_calculator import ConsistencyCalculator
 from app.repositories.predefined_profile_repo import PredefinedProfileRepository
 from app.services.ranking_state_service import RankingStateService
 from app.repositories.user_repo import UserRepository
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, List
 
 
 class ProfileAssigner:
@@ -60,7 +60,7 @@ class ProfileAssigner:
             # Get confidence from top profile's average score
             if aggregated_states:
                 top_score = aggregated_states[0].average_score
-                confidence_level = "HIGH" if top_score >= 0.70 else "MEDIUM"
+                confidence_level = "HIGH" if top_score >= 0.45 else "MEDIUM"
             else:
                 confidence_level = "MEDIUM"
         else:
@@ -106,7 +106,7 @@ class ProfileAssigner:
         Args:
             user_id: User ID
             user_mode: 'COLD_START' or 'DRIFT_FALLBACK'
-            min_prompts: Minimum observations required (cold-start uses the provided value)
+            min_prompts: Minimum observations required (only applies to COLD_START mode)
             cold_threshold: Average score threshold for cold-start assignment
             fallback_threshold: Average score threshold for fallback assignment
         """
@@ -117,7 +117,7 @@ class ProfileAssigner:
         best = top_states[0]
 
         if user_mode == 'COLD_START':
-            # Cold-start: wait for required prompts (external caller sets this, e.g., 5)
+            # Cold-start: wait for required prompts (e.g., 5) and check stability
             if best.observation_count < min_prompts:
                 return False, None, best.average_score
 
@@ -126,6 +126,8 @@ class ProfileAssigner:
                 return True, best.profile_id, best.average_score
 
         elif user_mode == 'DRIFT_FALLBACK':
+            # Fallback: assign immediately if threshold is exceeded (no prompt count wait)
+            # Since fallback receives a list of prompts, checking min_prompts is pointless
             if best.average_score >= fallback_threshold:
                 return True, best.profile_id, best.average_score
 
@@ -133,7 +135,7 @@ class ProfileAssigner:
 
     def assign(
         self, 
-        extracted_behavior: dict, 
+        extracted_behavior: Union[dict, List[dict]], 
         user_id: str,
         user_mode: str = 'COLD_START'
     ) -> dict:
@@ -141,13 +143,15 @@ class ProfileAssigner:
         Assign profiles based on extracted behavior and update ranking state.
         
         Args:
-            extracted_behavior: Behavior features (intents, interests, signals, behavior_level, consistency, complexity)
+            extracted_behavior: Single behavior dict for COLD_START or list of behavior dicts for DRIFT_FALLBACK
+                               Each dict contains: (intents, interests, signals, behavior_level, consistency, complexity)
             user_id: User ID for ranking state persistence
             user_mode: 'COLD_START' or 'DRIFT_FALLBACK'
             
         Returns:
             Dict with status, confidence_level, user_mode, prompt_count, assigned_profile_id, aggregated_rankings
         """
+        # Load profiles and matching factors
         profiles = self.repo.load_full_profiles()
         matching_factors = self.repo.load_matching_factors()
         matcher = ProfileMatcher(matching_factors)
@@ -158,20 +162,59 @@ class ProfileAssigner:
             skip=0,
             limit=1
         )
-        prompt_count = aggregated_states_pre[0].observation_count + 1 if aggregated_states_pre else 1
+        current_prompt_count = aggregated_states_pre[0].observation_count if aggregated_states_pre else 0
         
-        # Cold-start: first 5 prompts use Intent + Domain only
-        is_cold_start = prompt_count < 5
-
-        # Match profiles for current prompt
-        result = matcher.match(profiles, extracted_behavior, is_cold_start=is_cold_start)
-
-        # Update ranking state with current prompt results
-        ranked_profiles = result["ranked_profiles"]
-        self.ranking_service.update_from_ranked_profiles(
-            user_id=user_id,
-            ranked_profiles=ranked_profiles
-        )
+        # For DRIFT_FALLBACK mode, expect a list of prompts
+        if user_mode == 'DRIFT_FALLBACK':
+            if not isinstance(extracted_behavior, list):
+                # Wrap single dict in a list for consistent processing
+                behavior_list = [extracted_behavior]
+            else:
+                behavior_list = extracted_behavior
+            
+            print(f"\n=== FALLBACK MODE: Processing {len(behavior_list)} prompts ===")
+            
+            # Process each prompt in the list
+            for idx, behavior in enumerate(behavior_list):
+                prompt_count = current_prompt_count + idx + 1
+                
+                # Fallback mode always uses full matching (not cold-start)
+                is_cold_start = False
+                
+                print(f"\n--- Processing prompt {idx + 1}/{len(behavior_list)} (Total count: {prompt_count}) ---")
+                
+                # Match profiles for this prompt
+                result = matcher.match(profiles, behavior, is_cold_start=is_cold_start)
+                
+                # Update ranking state with this prompt's results
+                ranked_profiles = result["ranked_profiles"]
+                self.ranking_service.update_from_ranked_profiles(
+                    user_id=user_id,
+                    ranked_profiles=ranked_profiles
+                )
+            
+            # Final prompt count after processing all prompts
+            prompt_count = current_prompt_count + len(behavior_list)
+            
+        else:  # COLD_START mode
+            # Single prompt processing
+            if isinstance(extracted_behavior, list):
+                raise ValueError("COLD_START mode expects a single behavior dict, not a list")
+            
+            prompt_count = current_prompt_count + 1
+            
+            # Cold-start: first 5 prompts use Intent + Domain only
+            is_cold_start = prompt_count < 5
+            
+            # Match profiles for current prompt
+            result = matcher.match(profiles, extracted_behavior, is_cold_start=is_cold_start)
+            
+            # Update ranking state with current prompt results
+            ranked_profiles = result["ranked_profiles"]
+            self.ranking_service.update_from_ranked_profiles(
+                user_id=user_id,
+                ranked_profiles=ranked_profiles
+            )
 
         # Fetch updated aggregated ranking state
         aggregated_states, _ = self.ranking_service.get_all_states_for_user(
@@ -181,9 +224,11 @@ class ProfileAssigner:
         )
 
         # Determine if assignment should happen
-        min_prompts = 5 if user_mode == 'COLD_START' else 3
+        # Cold-start: wait for 5 prompts with stability check
+        # Fallback: assign immediately if threshold exceeded (no prompt wait)
+        min_prompts = 5 if user_mode == 'COLD_START' else 0  # Fallback doesn't need min_prompts
         cold_threshold = 0.60
-        fallback_threshold = 0.70
+        fallback_threshold = 0.35  # Realistic for normalized scores across 6 profiles (>2x average)
         
         should_assign, assigned_profile_id, avg_score = self.should_assign_profile(
             user_id=user_id,
@@ -196,7 +241,8 @@ class ProfileAssigner:
         # Determine status and confidence level
         if should_assign:
             status = "ASSIGNED"
-            confidence_level = "HIGH" if avg_score >= 0.70 else "MEDIUM"
+            # Adjusted confidence levels for realistic thresholds
+            confidence_level = "HIGH" if avg_score >= 0.45 else "MEDIUM"
             
             # Persist assignment to user table
             try:

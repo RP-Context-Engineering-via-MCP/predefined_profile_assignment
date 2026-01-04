@@ -24,16 +24,6 @@ class PredefinedProfileRepository:
             .all()
         )
         
-        # Debug: Print loaded data
-        print(f"\n=== DEBUG: Loaded {len(profiles)} profiles ===")
-        for p in profiles:
-            print(f"\nProfile: {p.profile_id} - {p.profile_name}")
-            print(f"  Intents: {[(pi.intent.intent_name, float(pi.weight)) for pi in p.intents]}")
-            print(f"  Interests: {[(pi.interest.interest_name, float(pi.weight)) for pi in p.interests]}")
-            print(f"  Behavior Levels: {[bl.level.level_name for bl in p.behavior_levels]}")
-            print(f"  Behavior Signals: {[(ps.signal.signal_name, float(ps.weight)) for ps in p.behavior_signals]}")
-        print("=== END DEBUG ===\n")
-        
         return profiles
 
     def load_matching_factors(self):
