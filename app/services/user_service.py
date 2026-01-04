@@ -123,6 +123,74 @@ class UserService:
         """Get user by email"""
         return self.repo.get_user_by_email(email)
 
+    def oauth_login_or_register(self, email: str, name: str, provider: str, provider_id: str, picture: Optional[str] = None) -> Tuple[User, bool]:
+        """
+        Handle OAuth login or registration
+        
+        Checks if a user exists with the given email or provider credentials:
+        - If exists by email or provider: returns the existing user
+        - If not exists: creates a new OAuth user
+        
+        Args:
+            email: User's email from OAuth provider
+            name: User's full name from OAuth provider
+            provider: OAuth provider name (e.g., 'google', 'github')
+            provider_id: OAuth provider's user ID
+            picture: Profile picture URL (optional)
+            
+        Returns:
+            Tuple[User, bool]: (User object, is_new_user flag)
+        """
+        # First, check if user exists by provider and provider_id
+        existing_user = self.repo.get_user_by_provider(provider, provider_id)
+        
+        if existing_user:
+            # User exists with this OAuth provider - update last login
+            self.repo.update_last_login(existing_user.user_id)
+            return existing_user, False
+        
+        # Second, check if user exists by email (might have registered with password)
+        existing_user = self.repo.get_user_by_email(email)
+        
+        if existing_user:
+            # User exists with this email - update OAuth info and last login
+            existing_user.provider = provider
+            existing_user.provider_id = provider_id
+            if picture:
+                existing_user.picture = picture
+            if name and not existing_user.name:
+                existing_user.name = name
+            self.repo.db.commit()
+            self.repo.db.refresh(existing_user)
+            self.repo.update_last_login(existing_user.user_id)
+            return existing_user, False
+        
+        # User doesn't exist - create new OAuth user
+        # Use email as username for OAuth users (or extract from email)
+        username = email.split('@')[0]
+        
+        # Check if username exists, if so append numbers
+        base_username = username
+        counter = 1
+        while self.repo.get_user_by_username(username):
+            username = f"{base_username}{counter}"
+            counter += 1
+        
+        user = self.repo.create_user(
+            username=username,
+            email=email,
+            password_hash=None,  # OAuth users don't have passwords
+            name=name,
+            picture=picture,
+            provider=provider,
+            provider_id=provider_id
+        )
+        
+        # Set last login for new user
+        self.repo.update_last_login(user.user_id)
+        
+        return user, True
+
     def list_users(
         self, 
         skip: int = 0, 

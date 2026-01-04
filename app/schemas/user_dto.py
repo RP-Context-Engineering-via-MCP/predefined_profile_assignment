@@ -117,3 +117,38 @@ class UserLoginResponse(BaseModel):
     username: str
     email: str
     message: str = "Login successful"
+
+
+class OAuthLoginRequest(BaseModel):
+    """Schema for OAuth login/registration"""
+    email: EmailStr
+    name: str
+    provider: str  # 'google', 'github', 'facebook', etc.
+    provider_id: str  # OAuth provider's unique user ID
+    picture: Optional[str] = None  # Profile picture URL
+
+    @validator('provider')
+    def validate_provider(cls, v):
+        """Validate OAuth provider"""
+        allowed_providers = ['google', 'github', 'facebook', 'microsoft', 'apple']
+        if v.lower() not in allowed_providers:
+            raise ValueError(f'OAuth provider must be one of: {", ".join(allowed_providers)}')
+        return v.lower()
+
+
+class OAuthLoginResponse(BaseModel):
+    """Schema for OAuth login response"""
+    user_id: str
+    username: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+    is_new_user: bool
+    access_token: str
+    token_type: str = "bearer"
+
+
+class GitHubCallbackRequest(BaseModel):
+    """Schema for GitHub OAuth callback request"""
+    code: str
+    redirect_uri: str

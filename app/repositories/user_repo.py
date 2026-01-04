@@ -13,23 +13,31 @@ class UserRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_user(self, username: str, email: str, password_hash: str,
+    def create_user(self, username: str, email: str, password_hash: str = None,
                    predefined_profile_id: str = None, 
                    dynamic_profile_id: str = None, profile_mode: str = "COLD_START",
                    dynamic_profile_confidence: float = 0.0, 
-                   dynamic_profile_ready: bool = False) -> User:
+                   dynamic_profile_ready: bool = False,
+                   name: str = None,
+                   picture: str = None,
+                   provider: str = None,
+                   provider_id: str = None) -> User:
         """
         Create a new user
         
         Args:
             username: Username
             email: User email address
-            password_hash: Hashed password
+            password_hash: Hashed password (optional for OAuth users)
             predefined_profile_id: Reference to predefined profile
             dynamic_profile_id: Reference to dynamic profile
             profile_mode: Profile mode (COLD_START, HYBRID, DYNAMIC_ONLY, DRIFT_FALLBACK)
             dynamic_profile_confidence: Confidence score for dynamic profile
             dynamic_profile_ready: Whether dynamic profile is ready
+            name: User's full name
+            picture: Profile picture URL
+            provider: OAuth provider ('google', 'github', etc.)
+            provider_id: OAuth provider's user ID
             
         Returns:
             User: Created user object
@@ -43,6 +51,10 @@ class UserRepository:
                 username=username,
                 email=email,
                 password_hash=password_hash,
+                name=name,
+                picture=picture,
+                provider=provider,
+                provider_id=provider_id,
                 predefined_profile_id=predefined_profile_id,
                 dynamic_profile_id=dynamic_profile_id,
                 profile_mode=UserProfileMode(profile_mode),
@@ -73,6 +85,22 @@ class UserRepository:
     def get_user_by_email(self, email: str) -> User:
         """Get user by email"""
         return self.db.query(User).filter(User.email == email).first()
+
+    def get_user_by_provider(self, provider: str, provider_id: str) -> User:
+        """Get user by OAuth provider and provider_id"""
+        return self.db.query(User).filter(
+            User.provider == provider,
+            User.provider_id == provider_id
+        ).first()
+
+    def update_last_login(self, user_id: str) -> User:
+        """Update user's last login timestamp"""
+        user = self.get_user_by_id(user_id)
+        if user:
+            user.last_login = datetime.utcnow()
+            self.db.commit()
+            self.db.refresh(user)
+        return user
 
     def get_all_users(self, skip: int = 0, limit: int = 100) -> tuple[list[User], int]:
         """

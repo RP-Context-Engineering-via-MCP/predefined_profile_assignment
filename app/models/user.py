@@ -30,11 +30,20 @@ class User(Base):
     user_id = Column(String(36), primary_key=True, index=True)  # UUID string (36 chars)
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)  # Store hashed password
+    password_hash = Column(String(255), nullable=True)  # Store hashed password (nullable for OAuth users)
+    
+    # User profile info
+    name = Column(String(255), nullable=True)  # Full name (from OAuth or user input)
+    picture = Column(String(500), nullable=True)  # Profile picture URL
+    
+    # OAuth fields
+    provider = Column(String(50), nullable=True, index=True)  # 'google', 'github', 'local', etc.
+    provider_id = Column(String(255), nullable=True, index=True)  # OAuth provider's user ID
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_active_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+    last_login = Column(DateTime(timezone=True), nullable=True)  # Track last login time
 
     # Account status
     status = Column(

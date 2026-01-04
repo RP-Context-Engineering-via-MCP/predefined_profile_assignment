@@ -10,8 +10,14 @@ from app.schemas.user_dto import (
     UserResponse,
     UserListResponse,
     UserLoginRequest,
-    UserLoginResponse
+    UserLoginResponse,
+    OAuthLoginRequest,
+    OAuthLoginResponse,
+    GitHubCallbackRequest
 )
+from app.core.jwt_utils import create_access_token
+from app.core.config import settings
+import httpx
 from pydantic import BaseModel
 
 
@@ -94,6 +100,189 @@ def login_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Login failed: {str(e)}"
         )
+
+
+@router.post("/oauth/login", response_model=OAuthLoginResponse)
+def oauth_login(
+    oauth_data: OAuthLoginRequest,
+    service: UserService = Depends(get_user_service)
+):
+    """
+    OAuth login or registration endpoint
+    
+    If user exists with the email or provider credentials: logs them in
+    If user doesn't exist: creates account and logs them in
+    Returns is_new_user flag to indicate if user should complete onboarding
+    """
+    try:
+        # Call the OAuth login/register service
+        user, is_new_user = service.oauth_login_or_register(
+            email=oauth_data.email,
+            name=oauth_data.name,
+            provider=oauth_data.provider,
+            provider_id=oauth_data.provider_id,
+            picture=oauth_data.picture
+        )
+        
+        # Generate JWT access token
+        access_token = create_access_token(data={"sub": user.user_id})
+        
+        # Return response with user data and token
+        return OAuthLoginResponse(
+            user_id=user.user_id,
+            username=user.username,
+            email=user.email,
+            name=user.name or "",
+            picture=user.picture,
+            is_new_user=is_new_user,
+            access_token=access_token,
+            token_type="bearer"
+        )
+        
+    except ValueError as e:
+        # Handle unique constraint violations
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OAuth authentication failed: {str(e)}"
+        )
+
+
+@router.post("/oauth/github/callback", response_model=OAuthLoginResponse)
+async def github_oauth_callback(
+    request: GitHubCallbackRequest,
+    service: UserService = Depends(get_user_service)
+):
+    """
+    Handle GitHub OAuth callback
+    
+    Exchange authorization code for access token, fetch user info from GitHub,
+    and create or authenticate user. Returns JWT token with user data.
+    """
+    GITHUB_CLIENT_ID = settings.GITHUB_CLIENT_ID
+    GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET
+    
+    if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="GitHub OAuth not configured on server"
+        )
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Step 1: Exchange code for access token
+            token_response = await client.post(
+                "https://github.com/login/oauth/access_token",
+                headers={"Accept": "application/json"},
+                data={
+                    "client_id": GITHUB_CLIENT_ID,
+                    "client_secret": GITHUB_CLIENT_SECRET,
+                    "code": request.code,
+                    "redirect_uri": request.redirect_uri,
+                }
+            )
+            
+            if token_response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to exchange code for access token: {token_response.text}"
+                )
+            
+            token_data = token_response.json()
+            access_token = token_data.get("access_token")
+            
+            if not access_token:
+                error_description = token_data.get("error_description", "No access token received")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"GitHub OAuth error: {error_description}"
+                )
+            
+            # Step 2: Get user info from GitHub
+            user_response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github+json",
+                }
+            )
+            
+            if user_response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to get user info from GitHub"
+                )
+            
+            github_user = user_response.json()
+            
+            # Step 3: Get email if not in profile
+            email = github_user.get("email")
+            if not email:
+                emails_response = await client.get(
+                    "https://api.github.com/user/emails",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Accept": "application/vnd.github+json",
+                    }
+                )
+                
+                if emails_response.status_code == 200:
+                    emails = emails_response.json()
+                    # Find primary verified email
+                    for email_data in emails:
+                        if email_data.get("primary") and email_data.get("verified"):
+                            email = email_data.get("email")
+                            break
+                    
+                    # If no primary, use first verified email
+                    if not email:
+                        for email_data in emails:
+                            if email_data.get("verified"):
+                                email = email_data.get("email")
+                                break
+            
+            if not email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No verified email found in GitHub account. Please make your email public in GitHub settings."
+                )
+        
+        # Step 4: Authenticate or create user
+        user, is_new_user = service.oauth_login_or_register(
+            email=email,
+            name=github_user.get("name") or github_user.get("login"),
+            provider="github",
+            provider_id=str(github_user.get("id")),
+            picture=github_user.get("avatar_url")
+        )
+        
+        # Generate JWT access token
+        jwt_token = create_access_token(data={"sub": user.user_id})
+        
+        # Return response with user data and token
+        return OAuthLoginResponse(
+            user_id=user.user_id,
+            username=user.username,
+            email=user.email,
+            name=user.name or "",
+            picture=user.picture,
+            is_new_user=is_new_user,
+            access_token=jwt_token,
+            token_type="bearer"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"GitHub OAuth failed: {str(e)}"
+        )
+
 
 
 # ==================== CRUD Routes ====================
