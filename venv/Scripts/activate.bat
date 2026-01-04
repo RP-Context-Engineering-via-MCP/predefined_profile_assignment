@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=E:\SLIIT\OneDrive - Sri Lanka Institute of Information Technology\Research\New user behavior analyzing and predefined profile assignment\venv
+set VIRTUAL_ENV=E:\SLIIT\Research\Implementation\predefined_profile_assignment\venv
 
 if not defined PROMPT set PROMPT=$P$G
 

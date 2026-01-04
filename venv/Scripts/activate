@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="E:\SLIIT\OneDrive - Sri Lanka Institute of Information Technology\Research\New user behavior analyzing and predefined profile assignment\venv"
+VIRTUAL_ENV="E:\SLIIT\Research\Implementation\predefined_profile_assignment\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
