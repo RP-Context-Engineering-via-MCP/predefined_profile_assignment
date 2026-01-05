@@ -165,24 +165,24 @@ class ProfileAssigner:
     def assign(
         self, 
         extracted_behavior: Union[dict, List[dict]], 
-        user_id: str,
-        user_mode: str = 'COLD_START'
+        user_id: str
     ) -> dict:
         """Assign profile based on extracted behavioral data.
         
         Main orchestration method that:
-        1. Loads profiles and matching factors
-        2. Processes behavior(s) through profile matcher
-        3. Updates ranking state with results
-        4. Determines if assignment criteria met
-        5. Persists assignment if applicable
+        1. Fetches user mode from database
+        2. Validates behavior format based on user mode
+        3. Loads profiles and matching factors
+        4. Processes behavior(s) through profile matcher
+        5. Updates ranking state with results
+        6. Determines if assignment criteria met
+        7. Persists assignment if applicable
         
         Args:
             extracted_behavior: Single behavior dict (COLD_START) or list of dicts (DRIFT_FALLBACK).
                 Each dict contains: intents, interests, signals, behavior_level, 
                 consistency, complexity
-            user_id: User unique identifier for ranking persistence
-            user_mode: Assignment mode (COLD_START or DRIFT_FALLBACK)
+            user_id: User unique identifier for ranking persistence and mode retrieval
             
         Returns:
             dict: Assignment result containing:
@@ -192,7 +192,33 @@ class ProfileAssigner:
                 - prompt_count: Total prompts processed
                 - assigned_profile_id: Assigned profile or None
                 - aggregated_rankings: List of all profile ranking states
+                
+        Raises:
+            ValueError: If user not found or behavior format invalid for user mode
         """
+        # Fetch user and get their current mode from database
+        user = self.user_repo.get_user_by_id(user_id)
+        if not user:
+            raise ValueError(f"User with ID {user_id} not found")
+        
+        user_mode = user.profile_mode.value
+        
+        # Validate behavior format based on user_mode from database
+        if user_mode == 'DRIFT_FALLBACK':
+            if isinstance(extracted_behavior, dict):
+                raise ValueError(
+                    "DRIFT_FALLBACK mode expects a list of behavior dicts, not a single dict"
+                )
+            if not isinstance(extracted_behavior, list) or len(extracted_behavior) == 0:
+                raise ValueError(
+                    "DRIFT_FALLBACK mode requires at least one behavior dict in the list"
+                )
+        elif user_mode == 'COLD_START':
+            if isinstance(extracted_behavior, list):
+                raise ValueError(
+                    "COLD_START mode expects a single behavior dict, not a list"
+                )
+        
         # Load profiles and matching factors
         profiles = self.repo.load_full_profiles()
         standard_weights = self.repo.load_matching_factors(mode='STANDARD')

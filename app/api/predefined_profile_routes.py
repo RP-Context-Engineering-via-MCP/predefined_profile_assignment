@@ -58,6 +58,7 @@ def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
     """Assign predefined profile based on extracted behavior data.
     
     Processes user behavior to assign the most suitable predefined profile.
+    User mode is automatically retrieved from the user's database record.
     Supports two modes:
     - COLD_START: Single behavior dict for new users (initial assignment)
     - DRIFT_FALLBACK: List of behavior dicts for multi-prompt processing
@@ -68,7 +69,6 @@ def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
     Args:
         payload: BehaviorInputDTO containing:
             - user_id: Unique user identifier
-            - user_mode: Assignment mode (COLD_START or DRIFT_FALLBACK)
             - behavior: Single dict (COLD_START) or list of dicts (DRIFT_FALLBACK)
         db: Database session dependency.
         
@@ -81,6 +81,7 @@ def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
         
     Raises:
         HTTPException 400: If user_id missing or behavior format invalid for mode.
+        HTTPException 404: If user not found in database.
         HTTPException 500: If profile assignment process fails.
     """
     if not payload.user_id:
@@ -89,34 +90,16 @@ def assign_profile(payload: BehaviorInputDTO, db=Depends(get_db)):
             detail="user_id is required for profile assignment"
         )
     
-    # Validate behavior based on user_mode
-    if payload.user_mode == 'DRIFT_FALLBACK':
-        if isinstance(payload.behavior, dict):
-            raise HTTPException(
-                status_code=400,
-                detail="DRIFT_FALLBACK mode expects a list of behavior dicts, not a single dict"
-            )
-        if not isinstance(payload.behavior, list) or len(payload.behavior) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="DRIFT_FALLBACK mode requires at least one behavior dict in the list"
-            )
-    elif payload.user_mode == 'COLD_START':
-        if isinstance(payload.behavior, list):
-            raise HTTPException(
-                status_code=400,
-                detail="COLD_START mode expects a single behavior dict, not a list"
-            )
-    
     assigner = ProfileAssigner(db)
     behavior = payload.behavior
 
     try:
         result = assigner.assign(
             extracted_behavior=behavior,
-            user_id=payload.user_id,
-            user_mode=payload.user_mode
+            user_id=payload.user_id
         )
         return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
