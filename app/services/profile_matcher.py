@@ -5,7 +5,7 @@ using weighted multi-factor matching algorithms."""
 
 from typing import Dict, List, Optional
 from app.models.profile import Profile
-from app.core.constants import MatchingWeights, DefaultValues
+from app.core.constants import DefaultValues
 from app.core.logging_config import matcher_logger
 
 
@@ -13,29 +13,29 @@ class ProfileMatcher:
     """Profile matching and scoring service.
     
     Implements weighted factor matching with support for both standard
-    and cold-start (simplified) matching modes.
+    and cold-start (simplified) matching modes using database-loaded weights.
     
     Attributes:
-        weights: Standard matching weights (all factors)
-        cold_start_weights: Simplified cold-start weights (intent + interest only)
+        weights: Standard matching weights loaded from database
+        cold_start_weights: Simplified cold-start weights loaded from database
     """
 
-    def __init__(self, matching_factors: Dict[str, float]):
-        """Initialize matcher with custom factor weights.
+    def __init__(self, standard_weights: Dict[str, float], cold_start_weights: Dict[str, float]):
+        """Initialize matcher with database-loaded factor weights.
         
         Args:
-            matching_factors: Dictionary of factor weights to override defaults
+            standard_weights: Standard mode weights from database
+            cold_start_weights: Cold-start mode weights from database
         """
-        # Start with default standard weights
-        self.weights = MatchingWeights.get_standard_weights()
-        # Override with provided factors
-        self.weights.update(matching_factors)
         
-        # Cold-start weights (INTENT + INTEREST only)
-        self.cold_start_weights = MatchingWeights.get_cold_start_weights()
+        self.weights = standard_weights
+        self.cold_start_weights = cold_start_weights
         
         matcher_logger.info(
-            f"ProfileMatcher initialized with weights: {self.weights}"
+            f"ProfileMatcher initialized with standard weights: {self.weights}"
+        )
+        matcher_logger.info(
+            f"ProfileMatcher initialized with cold-start weights: {self.cold_start_weights}"
         )
 
     def match(
@@ -66,7 +66,7 @@ class ProfileMatcher:
                 - best_profile: ID of top-ranked profile
                 - confidence: Normalized score of top-ranked profile
         """
-        # Select weights based on cold-start status
+        
         active_weights = self.cold_start_weights if is_cold_start else self.weights
         
         matcher_logger.info(
@@ -80,7 +80,7 @@ class ProfileMatcher:
             score = self._calculate_profile_score(profile, extracted_behavior, active_weights)
             scores[profile.profile_id] = score
 
-        # Normalize scores
+        
         total = sum(scores.values()) or 1.0
         
         if total == 0:
@@ -92,7 +92,7 @@ class ProfileMatcher:
         
         scores = {k: v / total for k, v in scores.items()}
         
-        # Log normalized scores
+        
         matcher_logger.debug("Normalized scores:")
         for pid, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
             matcher_logger.debug(f"  {pid}: {score:.4f}")

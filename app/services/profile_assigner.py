@@ -195,8 +195,9 @@ class ProfileAssigner:
         """
         # Load profiles and matching factors
         profiles = self.repo.load_full_profiles()
-        matching_factors = self.repo.load_matching_factors()
-        matcher = ProfileMatcher(matching_factors)
+        standard_weights = self.repo.load_matching_factors(mode='STANDARD')
+        cold_start_weights = self.repo.load_matching_factors(mode='COLD_START')
+        matcher = ProfileMatcher(standard_weights, cold_start_weights)
         
         # Get current prompt count from aggregated state
         aggregated_states_pre, _ = self.ranking_service.get_all_states_for_user(

@@ -10,7 +10,8 @@ from app.models.profile_intent import ProfileIntent
 from app.models.profile_interest import ProfileInterest
 from app.models.profile_behavior_level import ProfileBehaviorLevel
 from app.models.profile_behavior_signal import ProfileBehaviorSignal
-from app.models.matching_factor import MatchingFactor
+from app.models.standard_matching_factor import StandardMatchingFactor
+from app.models.cold_start_matching_factor import ColdStartMatchingFactor
 
 
 class PredefinedProfileRepository:
@@ -54,15 +55,24 @@ class PredefinedProfileRepository:
         
         return profiles
 
-    def load_matching_factors(self):
-        """Load matching factor weights.
+    def load_matching_factors(self, mode='STANDARD'):
+        """Load matching factor weights for specified mode.
         
-        Retrieves configurable weights for each matching dimension.
+        Retrieves configurable weights for each matching dimension
+        from the appropriate table based on mode.
+        
+        Args:
+            mode: Matching mode ('STANDARD' or 'COLD_START')
         
         Returns:
             Dictionary mapping factor names (uppercase) to float weights
         """
+        if mode == 'COLD_START':
+            factors = self.db.query(ColdStartMatchingFactor).all()
+        else:
+            factors = self.db.query(StandardMatchingFactor).all()
+        
         return {
             f.factor_name.upper(): float(f.weight)
-            for f in self.db.query(MatchingFactor).all()
+            for f in factors
         }

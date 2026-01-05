@@ -10,46 +10,9 @@ from typing import Dict
 
 
 # ==================== Profile Matching Weights ====================
-
-class MatchingWeights:
-    """Default weights for profile matching factors (PDF-aligned)."""
-    
-    # Standard mode weights (sum = 1.0)
-    INTENT = 0.35       # Intent signals
-    INTEREST = 0.25     # Interest domain
-    COMPLEXITY = 0.15   # Task complexity & depth
-    STYLE = 0.15        # Interaction style & control
-    CONSISTENCY = 0.10  # Temporal consistency
-    
-    # Cold-start mode weights (sum = 1.0)
-    COLD_START_INTENT = 0.60      # Increased from 35%
-    COLD_START_INTEREST = 0.40    # Increased from 25%
-    COLD_START_COMPLEXITY = 0.0   # Disabled
-    COLD_START_STYLE = 0.0        # Disabled
-    COLD_START_CONSISTENCY = 0.0  # Disabled
-    
-    @classmethod
-    def get_standard_weights(cls) -> Dict[str, float]:
-        """Get standard matching weights."""
-        return {
-            "INTENT": cls.INTENT,
-            "INTEREST": cls.INTEREST,
-            "COMPLEXITY": cls.COMPLEXITY,
-            "STYLE": cls.STYLE,
-            "CONSISTENCY": cls.CONSISTENCY
-        }
-    
-    @classmethod
-    def get_cold_start_weights(cls) -> Dict[str, float]:
-        """Get cold-start matching weights."""
-        return {
-            "INTENT": cls.COLD_START_INTENT,
-            "INTEREST": cls.COLD_START_INTEREST,
-            "COMPLEXITY": cls.COLD_START_COMPLEXITY,
-            "STYLE": cls.COLD_START_STYLE,
-            "CONSISTENCY": cls.COLD_START_CONSISTENCY
-        }
-
+# NOTE: Matching weights are now stored in the database (matching_factor table)
+# and loaded dynamically. The MatchingWeights class has been deprecated.
+# See app/models/matching_factor.py and initial_seed.sql for weight configuration.
 
 # ==================== Profile Assignment Thresholds ====================
 
