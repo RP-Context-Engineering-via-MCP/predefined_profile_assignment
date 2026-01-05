@@ -93,6 +93,9 @@ class User(Base):
     fallback_reason = Column(String(500), nullable=True)
     fallback_activated_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Relationships
+    domain_states = relationship("UserDomainState", back_populates="user", cascade="all, delete")
+
     def __repr__(self):
         """Return string representation of User instance."""
         return f"<User(user_id={self.user_id}, username={self.username}, email={self.email}, status={self.status}, profile_mode={self.profile_mode})>"

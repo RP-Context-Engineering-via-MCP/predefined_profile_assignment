@@ -24,6 +24,12 @@ from app.models import (
     cold_start_matching_factor,
     user,
     user_profile_ranking_state,
+    output_preference,
+    interaction_tone,
+    domain_expertise_level,
+    profile_output_preference,
+    profile_tone,
+    user_domain_state,
 )
 
 SEED_SQL_PATH = "app/core/initial_seed.sql"

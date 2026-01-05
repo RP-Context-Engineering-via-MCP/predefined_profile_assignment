@@ -38,3 +38,5 @@ class Profile(Base):
     interests = relationship("ProfileInterest", back_populates="profile", cascade="all, delete")
     behavior_levels = relationship("ProfileBehaviorLevel", back_populates="profile", cascade="all, delete")
     behavior_signals = relationship("ProfileBehaviorSignal", back_populates="profile", cascade="all, delete")
+    output_preferences = relationship("ProfileOutputPreference", back_populates="profile", cascade="all, delete")
+    tones = relationship("ProfileTone", back_populates="profile", cascade="all, delete")

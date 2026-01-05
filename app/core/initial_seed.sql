@@ -144,3 +144,91 @@ INSERT INTO cold_start_matching_factor (factor_name, weight) VALUES
 ('STYLE', 0.00),
 ('CONSISTENCY', 0.00)
 ON CONFLICT (factor_name) DO NOTHING;
+
+-- =====================================================
+-- 12. OUTPUT PREFERENCES
+-- =====================================================
+-- Controls how responses are structured and delivered
+INSERT INTO output_preference (format_name, description) VALUES
+('STEP_BY_STEP', 'Explain concepts progressively with ordered steps'),
+('BULLET_POINTS', 'Concise bullet-pointed output'),
+('CODE_FIRST', 'Prioritize code examples before explanation'),
+('MULTI_OPTION', 'Provide multiple alternatives or variations'),
+('SHORT_RESPONSE', 'Brief, minimal responses'),
+('DETAILED_RESPONSE', 'In-depth explanations with detail')
+ON CONFLICT (format_name) DO NOTHING;
+
+-- =====================================================
+-- 13. PROFILE → OUTPUT PREFERENCE
+-- =====================================================
+-- Maps stable response preferences per profile
+INSERT INTO profile_output_preference (profile_id, output_pref_id, weight) VALUES
+-- P1 Knowledge Seeker
+('P1', 1, 1.0), -- STEP_BY_STEP
+('P1', 6, 0.8), -- DETAILED_RESPONSE
+
+-- P2 Productivity Professional
+('P2', 2, 1.0), -- BULLET_POINTS
+('P2', 5, 0.9), -- SHORT_RESPONSE
+
+-- P3 Technical Problem Solver
+('P3', 3, 1.0), -- CODE_FIRST
+('P3', 6, 0.9), -- DETAILED_RESPONSE
+
+-- P4 Creative Generator
+('P4', 4, 1.0), -- MULTI_OPTION
+
+-- P5 Lifestyle Advisor Seeker
+('P5', 2, 0.8), -- BULLET_POINTS
+('P5', 6, 0.7), -- DETAILED_RESPONSE
+
+-- P6 Casual Explorer
+('P6', 5, 1.0)  -- SHORT_RESPONSE
+ON CONFLICT DO NOTHING;
+
+-- =====================================================
+-- 14. INTERACTION TONE
+-- =====================================================
+-- Controls voice, empathy, and response feel
+INSERT INTO interaction_tone (tone_name, description) VALUES
+('INSTRUCTIONAL', 'Teaching-focused, explanatory tone'),
+('PROFESSIONAL', 'Direct, task-oriented professional tone'),
+('PRECISE', 'Accuracy-first, technical tone'),
+('CREATIVE', 'Open, imaginative, expressive tone'),
+('EMPATHETIC', 'Supportive, understanding tone'),
+('FRIENDLY', 'Light, conversational tone')
+ON CONFLICT (tone_name) DO NOTHING;
+
+-- =====================================================
+-- 15. PROFILE → INTERACTION TONE
+-- =====================================================
+-- Defines default tone per profile
+INSERT INTO profile_tone (profile_id, tone_id, weight) VALUES
+-- P1 Knowledge Seeker
+('P1', 1, 1.0), -- INSTRUCTIONAL
+
+-- P2 Productivity Professional
+('P2', 2, 1.0), -- PROFESSIONAL
+
+-- P3 Technical Problem Solver
+('P3', 3, 1.0), -- PRECISE
+
+-- P4 Creative Generator
+('P4', 4, 1.0), -- CREATIVE
+
+-- P5 Lifestyle Advisor Seeker
+('P5', 5, 1.0), -- EMPATHETIC
+
+-- P6 Casual Explorer
+('P6', 6, 1.0)  -- FRIENDLY
+ON CONFLICT DO NOTHING;
+
+-- =====================================================
+-- 16. DOMAIN EXPERTISE LEVEL
+-- =====================================================
+-- Defines possible expertise states (NOT profiles)
+INSERT INTO domain_expertise_level (level_name, description) VALUES
+('BEGINNER', 'Limited prior knowledge, needs explanation'),
+('INTERMEDIATE', 'Understands fundamentals, wants applied detail'),
+('ADVANCED', 'High proficiency, expects precision and optimization')
+ON CONFLICT (level_name) DO NOTHING;

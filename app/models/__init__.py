@@ -13,3 +13,9 @@ from app.models.standard_matching_factor import StandardMatchingFactor
 from app.models.cold_start_matching_factor import ColdStartMatchingFactor
 from app.models.user import User, UserStatus, UserProfileMode
 from app.models.user_profile_ranking_state import UserProfileRankingState
+from app.models.output_preference import OutputPreference
+from app.models.interaction_tone import InteractionTone
+from app.models.domain_expertise_level import DomainExpertiseLevel
+from app.models.profile_output_preference import ProfileOutputPreference
+from app.models.profile_tone import ProfileTone
+from app.models.user_domain_state import UserDomainState
