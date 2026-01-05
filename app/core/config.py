@@ -10,7 +10,7 @@ Settings are loaded from environment variables or .env file and include:
 All sensitive values should be provided via environment variables in production.
 """
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from typing import Optional
 
 
