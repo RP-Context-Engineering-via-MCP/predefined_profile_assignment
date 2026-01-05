@@ -13,6 +13,7 @@ from app.core.logging_config import setup_logging
 from app.api.predefined_profile_routes import router as predefined_profile_router
 from app.api.user_routes import router as user_router
 from app.api.ranking_state_routes import router as ranking_state_router
+from app.api.domain_expertise_routes import router as domain_expertise_router
 
 
 def create_app() -> FastAPI:
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(predefined_profile_router)
     app.include_router(user_router)
     app.include_router(ranking_state_router)
+    app.include_router(domain_expertise_router)
 
     return app
 

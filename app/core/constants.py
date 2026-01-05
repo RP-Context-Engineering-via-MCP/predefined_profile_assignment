@@ -161,3 +161,100 @@ class ResponseMessages:
     INVALID_EMAIL = "Invalid email format"
     INVALID_PASSWORD = "Password must be at least 8 characters"
     INVALID_USERNAME = "Username must be 3-50 characters"
+
+
+# ==================== Domain Expertise Constants ====================
+
+class ExpertiseThresholds:
+    """Thresholds for domain expertise level determination."""
+    
+    # Confidence score thresholds
+    BEGINNER_MAX = 0.39          # 0.00 – 0.39
+    INTERMEDIATE_MIN = 0.40       # 0.40 – 0.74
+    INTERMEDIATE_MAX = 0.74
+    ADVANCED_MIN = 0.75          # 0.75 – 1.00
+    
+    # Transition hysteresis
+    LEVEL_CHANGE_THRESHOLD = 2   # Number of consecutive interactions before level change
+    
+    # Decay settings
+    DECAY_DAYS_THRESHOLD = 30    # Days of inactivity before decay applies
+    DECAY_FACTOR = 0.98          # 2% decay per application
+
+
+class ExpertiseSignalWeights:
+    """Signal weights for expertise confidence calculation."""
+    
+    # Positive signals (increase confidence)
+    CORRECT_TERMINOLOGY = 0.10
+    MULTI_STEP_PROMPT = 0.15
+    ITERATIVE_REFINEMENT = 0.20
+    EXPLICIT_ADVANCED_REQUEST = 0.25
+    ASSUME_KNOWLEDGE = 0.20
+    
+    # Negative signals (decrease confidence)
+    BEGINNER_QUESTION = -0.10
+    DEFINITION_REQUEST = -0.10
+    INCORRECT_TERMINOLOGY = -0.20
+    
+    # Neutral (no change)
+    GENERIC_SHORT_PROMPT = 0.0
+    
+    # Minimum confidence for any update
+    MIN_CONFIDENCE = 0.0
+    MAX_CONFIDENCE = 1.0
+    
+    # Default starting confidence for new domains
+    COLD_START_CONFIDENCE = 0.1
+    
+    # Behavior level weights (for JSON-based updates)
+    BEHAVIOR_LEVEL_BASIC = 0.05
+    BEHAVIOR_LEVEL_INTERMEDIATE = 0.10
+    BEHAVIOR_LEVEL_ADVANCED = 0.20
+    
+    # Optional modifier bonuses
+    CONSISTENCY_BONUS = 0.05  # Applied when consistency > 0.5
+    COMPLEXITY_BONUS = 0.05   # Applied when complexity > 0.5
+
+
+class ExpertiseSignalKeywords:
+    """Keywords for detecting expertise signals in user prompts."""
+    
+    # Beginner indicators
+    BEGINNER_KEYWORDS = [
+        "what is", "what are", "define", "explain", "how to",
+        "tutorial", "basics", "introduction", "beginner",
+        "step by step", "simple", "easy way"
+    ]
+    
+    # Advanced indicators
+    ADVANCED_KEYWORDS = [
+        "optimize", "performance", "edge case", "edge cases",
+        "scalability", "architecture", "best practice", "best practices",
+        "assume I know", "skip basics", "advanced", "deep dive",
+        "low-level", "implementation details", "under the hood"
+    ]
+    
+    # Terminology indicators (domain-specific - to be extended)
+    TECHNICAL_TERMS = {
+        "PROGRAMMING": ["algorithm", "data structure", "complexity", "recursion", "polymorphism"],
+        "DATA_SCIENCE": ["regression", "classification", "feature engineering", "cross-validation"],
+        "AI": ["neural network", "gradient descent", "backpropagation", "transformer", "embedding"]
+    }
+
+
+class ExpertiseUpdateRules:
+    """Rules for when to update domain expertise."""
+    
+    # Minimum complexity to trigger update
+    MIN_COMPLEXITY_THRESHOLD = 0.3
+    
+    # Messages that should NOT trigger updates
+    IGNORE_PATTERNS = [
+        "thanks", "thank you", "ok", "okay", "got it",
+        "yes", "no", "sure", "great", "awesome",
+        "hi", "hello", "hey", "good morning", "good evening"
+    ]
+    
+    # Minimum prompt length (words) to consider
+    MIN_PROMPT_LENGTH = 3
