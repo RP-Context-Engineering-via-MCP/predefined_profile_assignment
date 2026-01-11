@@ -344,14 +344,6 @@ The service uses a sophisticated multi-factor scoring algorithm:
 - **standard_matching_factor** - Weights for full behavioral analysis
 - **cold_start_matching_factor** - Weights for cold-start mode
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
 ## 📝 License
 
 This project is part of a research initiative at SLIIT (Sri Lanka Institute of Information Technology).
