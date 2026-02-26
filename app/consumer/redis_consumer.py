@@ -76,8 +76,10 @@ class DriftEventConsumer:
                 )
                 
                 if messages:
+                    logger.info(f"Received {sum(len(entries) for _, entries in messages)} message(s) from {STREAM_NAME}")
                     for stream_name, entries in messages:
                         for entry_id, data in entries:
+                            logger.info(f"📥 Consuming event: stream={stream_name}, entry_id={entry_id}")
                             await self._process(entry_id, data)
 
             except asyncio.CancelledError:
@@ -103,7 +105,7 @@ class DriftEventConsumer:
             payload_str = data.get("payload", "{}")
             event_payload = json.loads(payload_str)
             
-            logger.debug(f"Processing drift event: {entry_id}")
+            logger.info(f"🔄 Processing drift event: {entry_id}, payload={event_payload}")
             await self._handler.handle(event_payload)
             
             # Acknowledge successful processing

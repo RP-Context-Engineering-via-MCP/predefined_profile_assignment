@@ -13,7 +13,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # Only act on drift events with these severities
-ACTIONABLE_SEVERITIES = {"MODERATE", "STRONG"}
+ACTIONABLE_SEVERITIES = {"MODERATE_DRIFT", "STRONG_DRIFT"}
 
 
 class DriftEventHandler:
@@ -24,7 +24,7 @@ class DriftEventHandler:
     
     Flow:
     1. Receive drift event from Redis Stream
-    2. Filter by severity (only MODERATE/STRONG trigger action)
+    2. Filter by severity (only MODERATE_DRIFT/STRONG_DRIFT trigger action)
     3. Fetch recent behaviors from Behavior Resolution Service
     4. Pass to IntakeOrchestrator in DRIFT_FALLBACK mode
     """
@@ -47,14 +47,14 @@ class DriftEventHandler:
         """Handle a drift event.
         
         Processes drift events from the drift.events Redis Stream.
-        Only acts on MODERATE or STRONG severity drifts.
+        Only acts on MODERATE_DRIFT or STRONG_DRIFT severity drifts.
         
         Args:
             event: Drift event dict with shape:
                 {
                     "drift_event_id": "drift-evt-abc123",
                     "user_id": "550e8400-e29b-41d4-a716-446655440000",
-                    "severity": "STRONG"
+                    "severity": "STRONG_DRIFT"
                 }
                 
                 Fields:
@@ -62,10 +62,11 @@ class DriftEventHandler:
                   in the profile.assigned event published afterward.
                 - user_id: Required to call Behavior Resolution Service
                   (GET /api/behaviors/{user_id}/recent).
-                - severity: Gate for reassignment. MODERATE or STRONG triggers
-                  action; WEAK is ignored. Filter happens here, not upstream.
+                - severity: Gate for reassignment. MODERATE_DRIFT or STRONG_DRIFT
+                  triggers action; NO_DRIFT and WEAK_DRIFT are ignored.
+                  Filter happens here, not upstream.
         """
-        severity = event.get("severity", "WEAK")
+        severity = event.get("severity", "NO_DRIFT")
         user_id = event.get("user_id")
         drift_event_id = event.get("drift_event_id")
 
@@ -82,11 +83,12 @@ class DriftEventHandler:
             return
 
         logger.info(
-            f"Processing drift event: user={user_id}, "
+            f"✅ Processing drift event: user={user_id}, "
             f"severity={severity}, drift_id={drift_event_id}"
         )
 
         # Fetch recent behaviors from Behavior Resolution Service
+        logger.info(f"🌐 Calling Behavior Resolution Service for user {user_id}...")
         recent_behaviors = await self._fetch_recent_behaviors(user_id)
         if not recent_behaviors:
             logger.warning(
@@ -141,13 +143,14 @@ class DriftEventHandler:
         params = {"limit": settings.DRIFT_FALLBACK_BEHAVIOR_LIMIT}
 
         try:
+            logger.info(f"📡 API Call: GET {url}?limit={params['limit']}")
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
                 behaviors = data.get("behaviors", [])
-                logger.debug(
-                    f"Fetched {len(behaviors)} recent behaviors for user {user_id}"
+                logger.info(
+                    f"✅ API Response: Successfully fetched {len(behaviors)} recent behaviors for user {user_id}"
                 )
                 return behaviors
                 
