@@ -4,12 +4,15 @@ Provides data access layer for profile entities with eager loading
 of all related attributes for efficient matching operations.
 """
 
+from typing import Optional, List
 from sqlalchemy.orm import joinedload
 from app.models.profile import Profile
 from app.models.profile_intent import ProfileIntent
 from app.models.profile_interest import ProfileInterest
 from app.models.profile_behavior_level import ProfileBehaviorLevel
 from app.models.profile_behavior_signal import ProfileBehaviorSignal
+from app.models.profile_output_preference import ProfileOutputPreference
+from app.models.profile_tone import ProfileTone
 from app.models.standard_matching_factor import StandardMatchingFactor
 from app.models.cold_start_matching_factor import ColdStartMatchingFactor
 
@@ -76,3 +79,54 @@ class PredefinedProfileRepository:
             f.factor_name.upper(): float(f.weight)
             for f in factors
         }
+
+    def get_profile_by_id(self, profile_id: str) -> Optional[Profile]:
+        """Get a single profile by ID with all relationships loaded.
+        
+        Eager loads all related entities including intents, interests,
+        behavior levels, signals, output preferences, and tones.
+        
+        Args:
+            profile_id: Profile identifier (e.g., 'P1', 'P2')
+            
+        Returns:
+            Profile object with all relationships loaded, or None if not found
+        """
+        profile = (
+            self.db.query(Profile)
+            .options(
+                joinedload(Profile.intents).joinedload(ProfileIntent.intent),
+                joinedload(Profile.interests).joinedload(ProfileInterest.interest),
+                joinedload(Profile.behavior_levels).joinedload(ProfileBehaviorLevel.level),
+                joinedload(Profile.behavior_signals).joinedload(ProfileBehaviorSignal.signal),
+                joinedload(Profile.output_preferences).joinedload(ProfileOutputPreference.output_preference),
+                joinedload(Profile.tones).joinedload(ProfileTone.tone),
+            )
+            .filter(Profile.profile_id == profile_id)
+            .first()
+        )
+        return profile
+
+    def get_all_profiles_with_context(self) -> List[Profile]:
+        """Load all profiles with complete context for downstream services.
+        
+        Eager loads ALL related entities including intents, interests,
+        behavior levels, signals, output preferences, and interaction tones.
+        
+        Returns:
+            List of Profile objects with complete context loaded
+        """
+        profiles = (
+            self.db.query(Profile)
+            .options(
+                joinedload(Profile.intents).joinedload(ProfileIntent.intent),
+                joinedload(Profile.interests).joinedload(ProfileInterest.interest),
+                joinedload(Profile.behavior_levels).joinedload(ProfileBehaviorLevel.level),
+                joinedload(Profile.behavior_signals).joinedload(ProfileBehaviorSignal.signal),
+                joinedload(Profile.output_preferences).joinedload(ProfileOutputPreference.output_preference),
+                joinedload(Profile.tones).joinedload(ProfileTone.tone),
+            )
+            .order_by(Profile.profile_id)
+            .all()
+        )
+        return profiles

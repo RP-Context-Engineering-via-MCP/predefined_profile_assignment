@@ -45,16 +45,77 @@ INSERT INTO behavior_signal (signal_id, signal_name, description) VALUES
 ON CONFLICT (signal_id) DO NOTHING;
 
 -- =====================================================
--- 5. PROFILES
+-- 5. PROFILES (with full AI context)
 -- =====================================================
-INSERT INTO profile (profile_id, profile_name, description) VALUES
-('P1', 'Knowledge Seeker', 'Learns concepts and seeks explanations'),
-('P2', 'Productivity Professional', 'Uses LLMs for efficient task completion'),
-('P3', 'Technical Problem Solver', 'Solves technical and engineering problems'),
-('P4', 'Creative Generator', 'Generates creative ideas and content'),
-('P5', 'Lifestyle Advisor Seeker', 'Seeks personal and lifestyle guidance'),
-('P6', 'Casual Explorer', 'Uses LLMs casually for curiosity or fun')
-ON CONFLICT (profile_id) DO NOTHING;
+INSERT INTO profile (profile_id, profile_name, description, context_statement, assumptions, ai_guidance, preferred_response_style, context_injection_prompt) VALUES
+(
+    'P1', 
+    'Knowledge Seeker', 
+    'Learns concepts and seeks explanations',
+    'This user wants to understand.',
+    '["User values clarity over speed", "Explanations are more important than final answers", "Users may ask follow-ups"]',
+    '["Explain concepts step-by-step", "Use examples and analogies", "Avoid skipping reasoning", "Encourage learning, not just results"]',
+    '["Educational", "Structured", "Patient", "Concept-first"]',
+    'Respond as a tutor. Prioritize explanation and understanding.'
+),
+(
+    'P2', 
+    'Productivity Professional', 
+    'Uses LLMs for efficient task completion',
+    'This user wants results, fast.',
+    '["User already understands basics", "Efficiency matters more than theory", "Output must be usable immediately"]',
+    '["Be concise and direct", "Deliver ready-to-use outputs", "Follow requested formats strictly", "Minimize unnecessary explanation"]',
+    '["Action-oriented", "Clear and structured", "Output-first"]',
+    'Respond as an assistant focused on execution and efficiency.'
+),
+(
+    'P3', 
+    'Technical Problem Solver', 
+    'Solves technical and engineering problems',
+    'This user wants to solve complex problems.',
+    '["Users are technically competent", "User cares about correctness and edge cases", "Iteration and refinement are expected"]',
+    '["Analyze before answering", "Explain trade-offs and assumptions", "Consider edge cases and failure modes", "Support debugging and optimization"]',
+    '["Analytical", "Precise", "Detailed where necessary"]',
+    'Respond as a technical expert. Prioritize correctness and depth.'
+),
+(
+    'P4', 
+    'Creative Generator', 
+    'Generates creative ideas and content',
+    'This user wants ideas and creativity.',
+    '["No single right answer", "Variety is more valuable than precision", "Exploration is encouraged"]',
+    '["Generate multiple options", "Be imaginative and flexible", "Encourage creative variation", "Avoid overly rigid structure"]',
+    '["Expressive", "Open-ended", "Inspiring"]',
+    'Respond creatively. Prioritize originality and idea generation.'
+),
+(
+    'P5', 
+    'Lifestyle Advisor Seeker', 
+    'Seeks personal and lifestyle guidance',
+    'This user wants personal guidance.',
+    '["User context and emotions matter", "Advice should be balanced and empathetic", "User seeks reassurance or direction"]',
+    '["Be supportive and empathetic", "Ask clarifying questions when needed", "Avoid overly authoritative tone", "Provide balanced, actionable advice"]',
+    '["Empathetic", "Encouraging", "Thoughtful"]',
+    'Respond as a supportive advisor, not a command-giver.'
+),
+(
+    'P6', 
+    'Casual Explorer', 
+    'Uses LLMs casually for curiosity or fun',
+    'This user is here for light engagement.',
+    '["User has low commitment", "Overly detailed responses reduce engagement", "Fun and accessibility matter"]',
+    '["Keep responses short and friendly", "Avoid heavy structure or depth", "Match the users casual tone", "Optimize for enjoyment"]',
+    '["Light", "Friendly", "Conversational"]',
+    'Respond casually and keep things engaging and simple.'
+)
+ON CONFLICT (profile_id) DO UPDATE SET
+    profile_name = EXCLUDED.profile_name,
+    description = EXCLUDED.description,
+    context_statement = EXCLUDED.context_statement,
+    assumptions = EXCLUDED.assumptions,
+    ai_guidance = EXCLUDED.ai_guidance,
+    preferred_response_style = EXCLUDED.preferred_response_style,
+    context_injection_prompt = EXCLUDED.context_injection_prompt;
 
 -- =====================================================
 -- 6. PROFILE_INTENT

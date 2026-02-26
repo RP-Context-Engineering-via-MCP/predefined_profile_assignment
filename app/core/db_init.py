@@ -35,6 +35,25 @@ from app.models import (
 SEED_SQL_PATH = "app/core/initial_seed.sql"
 
 
+def run_migrations() -> None:
+    """Run schema migrations to add new columns.
+    
+    Adds new AI context columns to the profile table if they don't exist.
+    Uses idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS statements.
+    """
+    migration_sql = """
+    -- Add new AI context columns to profile table if they don't exist
+    ALTER TABLE profile ADD COLUMN IF NOT EXISTS context_statement TEXT;
+    ALTER TABLE profile ADD COLUMN IF NOT EXISTS assumptions TEXT;
+    ALTER TABLE profile ADD COLUMN IF NOT EXISTS ai_guidance TEXT;
+    ALTER TABLE profile ADD COLUMN IF NOT EXISTS preferred_response_style TEXT;
+    ALTER TABLE profile ADD COLUMN IF NOT EXISTS context_injection_prompt TEXT;
+    """
+    
+    with engine.begin() as conn:
+        conn.execute(text(migration_sql))
+
+
 def seed_data() -> None:
     """Seed initial reference data from SQL script.
     
@@ -55,15 +74,17 @@ def seed_data() -> None:
 def init_db() -> None:
     """Initialize complete database schema and seed data.
     
-    Performs two-step initialization:
+    Performs three-step initialization:
     1. Creates all tables from ORM model metadata
-    2. Seeds initial reference data from SQL script
+    2. Runs schema migrations to add new columns
+    3. Seeds initial reference data from SQL script
     
-    Safe to run multiple times - both operations are idempotent.
+    Safe to run multiple times - all operations are idempotent.
     Call during application startup to ensure database readiness.
     
     Raises:
         Exception: If schema creation or seeding fails.
     """
     Base.metadata.create_all(bind=engine)
+    run_migrations()
     seed_data()

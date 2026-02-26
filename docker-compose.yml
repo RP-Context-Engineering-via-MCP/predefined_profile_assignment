@@ -1,0 +1,87 @@
+# Predefined Profile Service - Docker Compose Configuration
+# Uses Supabase for PostgreSQL and local Redis for stream messaging
+
+services:
+  # =========================================================================
+  # Predefined Profile Service (Main Application)
+  # =========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: predefined-profile-service
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env
+    environment:
+      # Override Redis to use container network
+      - REDIS_URL=redis://redis:6379
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - profile-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # =========================================================================
+  # Redis (for Stream messaging)
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: profile-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - profile-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # Redis Commander (Optional - Redis GUI for development)
+  # =========================================================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: profile-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8083:8081"
+    depends_on:
+      - redis
+    networks:
+      - profile-network
+    restart: unless-stopped
+    profiles:
+      - dev-tools
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  profile-network:
+    driver: bridge
+    name: profile-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  redis_data:
+    name: profile-redis-data
