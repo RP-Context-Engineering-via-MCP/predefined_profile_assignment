@@ -52,15 +52,18 @@ class DriftEventHandler:
         Args:
             event: Drift event dict with shape:
                 {
-                    "drift_event_id": "...",
-                    "user_id": "...",
-                    "drift_type": "TOPIC_EMERGENCE",
-                    "drift_score": 0.75,
-                    "severity": "STRONG",
-                    "affected_targets": ["Python"],
-                    "confidence": 0.89,
-                    ...
+                    "drift_event_id": "drift-evt-abc123",
+                    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+                    "severity": "STRONG"
                 }
+                
+                Fields:
+                - drift_event_id: Traceability ID for logging and including
+                  in the profile.assigned event published afterward.
+                - user_id: Required to call Behavior Resolution Service
+                  (GET /api/behaviors/{user_id}/recent).
+                - severity: Gate for reassignment. MODERATE or STRONG triggers
+                  action; WEAK is ignored. Filter happens here, not upstream.
         """
         severity = event.get("severity", "WEAK")
         user_id = event.get("user_id")
