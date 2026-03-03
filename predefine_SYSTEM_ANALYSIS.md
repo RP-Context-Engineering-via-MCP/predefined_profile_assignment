@@ -829,7 +829,7 @@ Input: extracted_behavior = {
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | Required |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
+| `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` (Docker: `redis://shared-redis:6379/3`) |
 | `JWT_SECRET_KEY` | JWT signing key | (development default) |
 | `JWT_ALGORITHM` | JWT algorithm | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiry | 30 |

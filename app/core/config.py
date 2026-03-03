@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
     
-    # Redis Configuration
-    REDIS_URL: str = "redis://localhost:6379"
+    # Redis Configuration (use /3 for shared Redis in Docker)
+    REDIS_URL: str = "redis://localhost:6379/0"
     
     # External Services
     BEHAVIOR_RESOLUTION_BASE_URL: str = "http://localhost:8001"

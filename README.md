@@ -157,6 +157,9 @@ predefined_profile_assignment/
    GITHUB_CLIENT_ID=your-github-client-id
    GITHUB_CLIENT_SECRET=your-github-client-secret
    
+   # Redis Configuration (Docker uses shared-redis:6379/3)
+   REDIS_URL=redis://localhost:6379/0
+   
    # Profile Assignment Algorithm Parameters
    MIN_PROMPTS_COLD_START=3
    MIN_PROMPTS_FALLBACK=5

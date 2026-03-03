@@ -148,7 +148,13 @@ class DriftEventHandler:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
-                behaviors = data.get("behaviors", [])
+                
+                # Handle both response formats: list directly or dict with "behaviors" key
+                if isinstance(data, list):
+                    behaviors = data
+                else:
+                    behaviors = data.get("behaviors", [])
+                    
                 logger.info(
                     f"✅ API Response: Successfully fetched {len(behaviors)} recent behaviors for user {user_id}"
                 )
