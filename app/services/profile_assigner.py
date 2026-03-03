@@ -7,7 +7,7 @@ from app.services.profile_matcher import ProfileMatcher
 from app.services.consistency_calculator import ConsistencyCalculator
 from app.repositories.predefined_profile_repo import PredefinedProfileRepository
 from app.services.ranking_state_service import RankingStateService
-from app.repositories.user_repo import UserRepository
+from app.services.user_management_client import UserManagementClient
 from typing import Optional, Tuple, Union, List
 
 
@@ -20,7 +20,7 @@ class ProfileAssigner:
     Attributes:
         repo: Predefined profile repository
         ranking_service: Ranking state service
-        user_repo: User repository
+        user_client: User Management Service HTTP client
         db: Database session
     """
 
@@ -32,7 +32,7 @@ class ProfileAssigner:
         """
         self.repo = PredefinedProfileRepository(db)
         self.ranking_service = RankingStateService(db)
-        self.user_repo = UserRepository(db)
+        self.user_client = UserManagementClient()
         self.db = db
 
     def get_assignment_status(self, user_id: str) -> dict:
@@ -53,9 +53,9 @@ class ProfileAssigner:
                 - assigned_profile_id: Currently assigned profile or None
                 - aggregated_rankings: List of all profile ranking states
         """
-        # Get user to check assigned profile
-        user = self.user_repo.get_user_by_id(user_id)
-        if not user:
+        # Get user data from User Management Service
+        user_data = self.user_client.get_user_profile_sync(user_id)
+        if not user_data:
             return {
                 "status": "NOT_FOUND",
                 "confidence_level": "NONE",
@@ -76,10 +76,10 @@ class ProfileAssigner:
         prompt_count = aggregated_states[0].observation_count if aggregated_states else 0
         
         # Check if user has assigned profile
-        assigned_profile_id = user.predefined_profile_id if user else None
+        assigned_profile_id = user_data.get("predefined_profile_id")
         
-        # Get user mode from user database (profile_mode field)
-        user_mode = user.profile_mode.value
+        # Get user mode from user data
+        user_mode = user_data.get("profile_mode", "COLD_START")
         
         # Determine status and confidence level
         if assigned_profile_id:
@@ -196,12 +196,12 @@ class ProfileAssigner:
         Raises:
             ValueError: If user not found or behavior format invalid for user mode
         """
-        # Fetch user and get their current mode from database
-        user = self.user_repo.get_user_by_id(user_id)
-        if not user:
-            raise ValueError(f"User with ID {user_id} not found")
+        # Get user data from User Management Service
+        user_data = self.user_client.get_user_profile_sync(user_id)
+        if not user_data:
+            raise ValueError(f"User with ID {user_id} not found in User Management Service")
         
-        user_mode = user.profile_mode.value
+        user_mode = user_data.get("profile_mode", "COLD_START")
         
         # Validate behavior format based on user_mode from database
         if user_mode == 'DRIFT_FALLBACK':
@@ -310,12 +310,14 @@ class ProfileAssigner:
             status = "ASSIGNED"
             confidence_level = "HIGH" if avg_score >= 0.70 else "MEDIUM"
             
-            # Persist assignment to user table
+            # Persist assignment to User Management Service
             try:
-                self.user_repo.update_user(
+                success = self.user_client.update_user_profile_sync(
                     user_id=user_id,
                     predefined_profile_id=assigned_profile_id
                 )
+                if not success:
+                    print(f"Warning: Failed to update user profile assignment in User Management Service")
             except Exception as e:
                 print(f"Warning: Failed to update user profile assignment: {e}")
         else:
