@@ -1,7 +1,7 @@
 """Drift Event Handler.
 
 Processes drift events received from the Drift Detection Service.
-Filters by severity, fetches recent behaviors from Behavior Resolution,
+Filters by severity, fetches specific behaviors by IDs from Behavior Resolution Service,
 and triggers profile re-assignment via the IntakeOrchestrator.
 """
 
@@ -20,12 +20,12 @@ class DriftEventHandler:
     """Handles drift events from the Drift Detection Service.
     
     When a user's behavior drifts significantly from their assigned profile,
-    this handler triggers a profile re-evaluation using recent behavior data.
+    this handler triggers a profile re-evaluation using specific behavior data.
     
     Flow:
-    1. Receive drift event from Redis Stream
+    1. Receive drift event from Redis Stream with behavior_ref_ids
     2. Filter by severity (only MODERATE_DRIFT/STRONG_DRIFT trigger action)
-    3. Fetch recent behaviors from Behavior Resolution Service
+    3. Fetch specific behaviors by IDs from Behavior Resolution Service
     4. Pass to IntakeOrchestrator in DRIFT_FALLBACK mode
     """
 
@@ -52,23 +52,26 @@ class DriftEventHandler:
         Args:
             event: Drift event dict with shape:
                 {
-                    "drift_event_id": "drift-evt-abc123",
-                    "user_id": "550e8400-e29b-41d4-a716-446655440000",
-                    "severity": "STRONG_DRIFT"
+                    "drift_event_id": "drift-abc123",
+                    "user_id": "user_001",
+                    "severity": "STRONG_DRIFT",
+                    "behavior_ref_ids": ["beh_r_001", "beh_r_002", "beh_c_003"]
                 }
                 
                 Fields:
                 - drift_event_id: Traceability ID for logging and including
                   in the profile.assigned event published afterward.
-                - user_id: Required to call Behavior Resolution Service
-                  (GET /api/behaviors/{user_id}/recent).
+                - user_id: Required to identify the user for profile reassignment.
                 - severity: Gate for reassignment. MODERATE_DRIFT or STRONG_DRIFT
                   triggers action; NO_DRIFT and WEAK_DRIFT are ignored.
                   Filter happens here, not upstream.
+                - behavior_ref_ids: List of behavior IDs that triggered the drift.
+                  Used to fetch specific behaviors from Behavior Resolution Service.
         """
         severity = event.get("severity", "NO_DRIFT")
         user_id = event.get("user_id")
         drift_event_id = event.get("drift_event_id")
+        behavior_ref_ids = event.get("behavior_ref_ids", [])
 
         # Only act on actionable drift severities
         if severity not in ACTIONABLE_SEVERITIES:
@@ -82,17 +85,27 @@ class DriftEventHandler:
             logger.warning(f"Drift event {drift_event_id} missing user_id")
             return
 
+        if not behavior_ref_ids:
+            logger.warning(
+                f"Drift event {drift_event_id} missing behavior_ref_ids, "
+                f"skipping drift fallback"
+            )
+            return
+
         logger.info(
             f"✅ Processing drift event: user={user_id}, "
-            f"severity={severity}, drift_id={drift_event_id}"
+            f"severity={severity}, drift_id={drift_event_id}, "
+            f"behavior_count={len(behavior_ref_ids)}"
         )
 
-        # Fetch recent behaviors from Behavior Resolution Service
-        logger.info(f"🌐 Calling Behavior Resolution Service for user {user_id}...")
-        recent_behaviors = await self._fetch_recent_behaviors(user_id)
-        if not recent_behaviors:
+        # Fetch specific behaviors from Behavior Resolution Service
+        logger.info(
+            f"🌐 Calling Behavior Resolution Service for behaviors: {behavior_ref_ids}..."
+        )
+        behaviors = await self._fetch_behaviors_by_ids(user_id, behavior_ref_ids)
+        if not behaviors:
             logger.warning(
-                f"No recent behaviors found for user {user_id}, "
+                f"No behaviors found for IDs {behavior_ref_ids}, "
                 f"skipping drift fallback"
             )
             return
@@ -102,7 +115,7 @@ class DriftEventHandler:
         result = await orchestrator.process(
             user_id=user_id,
             mode="DRIFT_FALLBACK",
-            extracted_behavior=recent_behaviors,
+            extracted_behavior=behaviors,
             trigger_event_id=drift_event_id
         )
 
@@ -112,6 +125,77 @@ class DriftEventHandler:
             f"profile={result.get('assigned_profile_id')}"
         )
 
+    async def _fetch_behaviors_by_ids(
+        self,
+        user_id: str,
+        behavior_ids: List[str]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Fetch specific behaviors by IDs from Behavior Resolution Service.
+        
+        Calls the Behavior Resolution Service API to retrieve behaviors
+        that triggered the drift detection.
+        
+        Args:
+            user_id: UUID of the user
+            behavior_ids: List of behavior reference IDs (e.g., ["beh_r_001", "beh_r_002"])
+            
+        Returns:
+            List of extracted_behavior dicts, or None on failure.
+            Each dict contains:
+                {
+                    "intents": {"LEARNING": 0.8, ...},
+                    "interests": {"PROGRAMMING": 0.7, ...},
+                    "behavior_level": "INTERMEDIATE",
+                    "signals": {"DETAILED_EXPLANATION": 0.5, ...},
+                    "complexity": 0.65,
+                    "consistency": 0.72
+                }
+        """
+        url = (
+            f"{settings.BEHAVIOR_RESOLUTION_BASE_URL}"
+            f"/api/behaviors/by-ids"
+        )
+        payload = {
+            "user_id": user_id,
+            "behavior_ids": behavior_ids
+        }
+
+        try:
+            logger.info(f"📡 API Call: POST {url} for user {user_id} with {len(behavior_ids)} behavior IDs")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Handle both response formats: list directly or dict with "behaviors" key
+                if isinstance(data, list):
+                    behaviors = data
+                else:
+                    behaviors = data.get("behaviors", [])
+                    
+                logger.info(
+                    f"✅ API Response: Successfully fetched {len(behaviors)} behaviors by IDs"
+                )
+                return behaviors
+                
+        except httpx.TimeoutException:
+            logger.error(
+                f"Timeout fetching behaviors by IDs "
+                f"from {settings.BEHAVIOR_RESOLUTION_BASE_URL}"
+            )
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"HTTP error fetching behaviors by IDs: "
+                f"{e.response.status_code} - {e.response.text}"
+            )
+            return None
+        except httpx.HTTPError as e:
+            logger.error(
+                f"Failed to fetch behaviors by IDs: {e}"
+            )
+            return None
+
     async def _fetch_recent_behaviors(
         self, 
         user_id: str
@@ -120,6 +204,9 @@ class DriftEventHandler:
         
         Calls the Behavior Resolution Service API to retrieve the last N
         profile_signals payloads for the user.
+        
+        DEPRECATED: This method is kept for backward compatibility.
+        New drift events should use behavior_ref_ids and _fetch_behaviors_by_ids.
         
         Args:
             user_id: UUID of the user

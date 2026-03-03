@@ -22,15 +22,18 @@ from app.core.logging_config import setup_logging
 from app.core.database import init_db as init_async_db, close_db
 from app.core.config import settings
 from app.consumer.redis_consumer import DriftEventConsumer
+from app.consumer.cold_start_signal_consumer import ColdStartSignalConsumer
 from app.api.predefined_profile_routes import router as predefined_profile_router
 from app.api.ranking_state_routes import router as ranking_state_router
 from app.api.domain_expertise_routes import router as domain_expertise_router
 
 logger = logging.getLogger(__name__)
 
-# Global consumer instance for lifecycle management
-_consumer_instance: Optional[DriftEventConsumer] = None
-_consumer_task: Optional[asyncio.Task] = None
+# Global consumer instances for lifecycle management
+_drift_consumer_instance: Optional[DriftEventConsumer] = None
+_drift_consumer_task: Optional[asyncio.Task] = None
+_coldstart_consumer_instance: Optional[ColdStartSignalConsumer] = None
+_coldstart_consumer_task: Optional[asyncio.Task] = None
 
 
 @asynccontextmanager
@@ -43,13 +46,15 @@ async def lifespan(app: FastAPI):
     1. Initialize sync database schema (tables, seed data)
     2. Verify async database connection
     3. Start Redis drift event consumer as background task
+    4. Start Redis cold start signal consumer as background task
     
     Shutdown:
-    1. Stop Redis consumer gracefully
-    2. Cancel consumer task
+    1. Stop Redis consumers gracefully
+    2. Cancel consumer tasks
     3. Close async database connections
     """
-    global _consumer_instance, _consumer_task
+    global _drift_consumer_instance, _drift_consumer_task
+    global _coldstart_consumer_instance, _coldstart_consumer_task
     
     # === STARTUP ===
     logger.info("Starting Predefined Profile Service...")
@@ -68,11 +73,20 @@ async def lifespan(app: FastAPI):
     
     # Start Redis drift event consumer as background task
     try:
-        _consumer_instance = DriftEventConsumer()
-        _consumer_task = asyncio.create_task(_consumer_instance.start())
+        _drift_consumer_instance = DriftEventConsumer()
+        _drift_consumer_task = asyncio.create_task(_drift_consumer_instance.start())
         logger.info("Drift event consumer started")
     except Exception as e:
         logger.warning(f"Failed to start drift event consumer: {e}")
+        # Don't fail startup - service can still handle HTTP requests
+    
+    # Start Redis cold start signal consumer as background task
+    try:
+        _coldstart_consumer_instance = ColdStartSignalConsumer()
+        _coldstart_consumer_task = asyncio.create_task(_coldstart_consumer_instance.start())
+        logger.info("Cold start signal consumer started")
+    except Exception as e:
+        logger.warning(f"Failed to start cold start signal consumer: {e}")
         # Don't fail startup - service can still handle HTTP requests
     
     logger.info("Predefined Profile Service started successfully")
@@ -82,20 +96,35 @@ async def lifespan(app: FastAPI):
     # === SHUTDOWN ===
     logger.info("Shutting down Predefined Profile Service...")
     
-    # Stop Redis consumer gracefully
-    if _consumer_instance is not None:
-        _consumer_instance.stop()
-        await _consumer_instance.close()
+    # Stop Redis drift consumer gracefully
+    if _drift_consumer_instance is not None:
+        _drift_consumer_instance.stop()
+        await _drift_consumer_instance.close()
         logger.info("Drift event consumer stopped")
     
-    # Cancel consumer task
-    if _consumer_task is not None:
-        _consumer_task.cancel()
+    # Cancel drift consumer task
+    if _drift_consumer_task is not None:
+        _drift_consumer_task.cancel()
         try:
-            await _consumer_task
+            await _drift_consumer_task
         except asyncio.CancelledError:
             pass
-        logger.info("Consumer task cancelled")
+        logger.info("Drift consumer task cancelled")
+    
+    # Stop Redis cold start signal consumer gracefully
+    if _coldstart_consumer_instance is not None:
+        _coldstart_consumer_instance.stop()
+        await _coldstart_consumer_instance.close()
+        logger.info("Cold start signal consumer stopped")
+    
+    # Cancel cold start consumer task
+    if _coldstart_consumer_task is not None:
+        _coldstart_consumer_task.cancel()
+        try:
+            await _coldstart_consumer_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Cold start signal consumer task cancelled")
     
     # Close async database connections
     await close_db()
@@ -170,7 +199,8 @@ async def health_check():
     
     Returns service health status including component states.
     """
-    consumer_status = "running" if (_consumer_instance and _consumer_instance._running) else "stopped"
+    drift_consumer_status = "running" if (_drift_consumer_instance and _drift_consumer_instance._running) else "stopped"
+    coldstart_consumer_status = "running" if (_coldstart_consumer_instance and _coldstart_consumer_instance._running) else "stopped"
     
     return {
         "status": "healthy",
@@ -178,7 +208,8 @@ async def health_check():
         "version": "1.0.0",
         "components": {
             "http_server": "running",
-            "drift_consumer": consumer_status,
+            "drift_consumer": drift_consumer_status,
+            "coldstart_signal_consumer": coldstart_consumer_status,
             "database": "connected"
         }
     }
