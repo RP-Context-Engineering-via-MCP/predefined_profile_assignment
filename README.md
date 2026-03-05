@@ -13,8 +13,8 @@ This FastAPI-based service provides an AI-powered profile assignment system desi
 - **📊 Drift Detection**: Identifies and responds to behavioral changes with automatic reassignment
 - **🎓 Domain Expertise Tracking**: Monitors user expertise levels across different interest domains
 - **📈 Temporal Ranking**: Maintains historical profile ranking evolution for trend analysis
-- **🔐 OAuth Integration**: Supports Google and GitHub authentication
-- **🔄 Adaptive Profiling**: Multiple user modes (COLD_START, HYBRID, DYNAMIC_ONLY, DRIFT_FALLBACK)
+- **� Adaptive Profiling**: Multiple user modes (COLD_START, HYBRID, DYNAMIC_ONLY, DRIFT_FALLBACK)
+- **🌐 Microservice Architecture**: Integrates with external User Management Service for user data
 
 ## 📋 Predefined Profiles
 
@@ -35,7 +35,6 @@ This FastAPI-based service provides an AI-powered profile assignment system desi
 ┌─────────────────────────────────────────────┐
 │           API Layer (FastAPI)               │
 │  - Profile Assignment Routes                │
-│  - User Management Routes                   │
 │  - Ranking State Routes                     │
 │  - Domain Expertise Routes                  │
 └─────────────────────────────────────────────┘
@@ -44,6 +43,7 @@ This FastAPI-based service provides an AI-powered profile assignment system desi
 │         Service Layer                       │
 │  - Profile Assigner                         │
 │  - Profile Matcher                          │
+│  - User Management Client (HTTP)            │
 │  - Complexity Calculator                    │
 │  - Consistency Calculator                   │
 │  - Domain Expertise Service                 │
@@ -53,7 +53,6 @@ This FastAPI-based service provides an AI-powered profile assignment system desi
 ┌─────────────────────────────────────────────┐
 │      Repository Layer                       │
 │  - Predefined Profile Repository            │
-│  - User Repository                          │
 │  - Ranking State Repository                 │
 │  - User Domain State Repository             │
 └─────────────────────────────────────────────┘
@@ -61,6 +60,12 @@ This FastAPI-based service provides an AI-powered profile assignment system desi
 ┌─────────────────────────────────────────────┐
 │      Database Layer (PostgreSQL)            │
 │  - SQLAlchemy ORM Models                    │
+└─────────────────────────────────────────────┘
+                    ↓
+          External Dependencies
+┌─────────────────────────────────────────────┐
+│    User Management Service (HTTP API)       │
+│  - User profile data and mode tracking      │
 └─────────────────────────────────────────────┘
 ```
 
@@ -71,31 +76,28 @@ predefined_profile_assignment/
 ├── app/
 │   ├── api/                    # RESTful API route handlers
 │   │   ├── predefined_profile_routes.py
-│   │   ├── user_routes.py
 │   │   ├── ranking_state_routes.py
 │   │   └── domain_expertise_routes.py
 │   ├── core/                   # Core configuration & utilities
 │   │   ├── config.py
 │   │   ├── database.py
-│   │   ├── jwt_utils.py
 │   │   ├── constants.py
 │   │   └── db_init.py
 │   ├── models/                 # SQLAlchemy ORM models
-│   │   ├── user.py
 │   │   ├── profile.py
 │   │   ├── user_profile_ranking_state.py
+│   │   ├── user_domain_state.py
 │   │   └── ...
 │   ├── repositories/           # Data access layer
 │   │   ├── predefined_profile_repo.py
-│   │   ├── user_repo.py
 │   │   └── ranking_state_repo.py
 │   ├── schemas/               # Pydantic DTOs
-│   │   ├── user_dto.py
 │   │   ├── predefined_profile_dto.py
 │   │   └── ranking_state_dto.py
 │   ├── services/              # Business logic layer
 │   │   ├── profile_assigner.py
 │   │   ├── profile_matcher.py
+│   │   ├── user_management_client.py
 │   │   ├── complexity_calculator.py
 │   │   └── consistency_calculator.py
 │   └── main.py                # Application entry point
@@ -148,17 +150,13 @@ predefined_profile_assignment/
    DEBUG=False
    LOG_LEVEL=INFO
    
-   # JWT Configuration
-   JWT_SECRET_KEY=your-secret-key-change-this-in-production
-   JWT_ALGORITHM=HS256
-   ACCESS_TOKEN_EXPIRE_MINUTES=30
-   
-   # OAuth (Optional)
-   GITHUB_CLIENT_ID=your-github-client-id
-   GITHUB_CLIENT_SECRET=your-github-client-secret
-   
-   # Redis Configuration (Docker uses shared-redis:6379/3)
+   # Redis Configuration (Docker uses shared-redis:6379/0)
    REDIS_URL=redis://localhost:6379/0
+   
+   # External Services
+   BEHAVIOR_RESOLUTION_BASE_URL=http://localhost:8001
+   USER_MANAGEMENT_SERVICE_URL=http://localhost:8080
+   DRIFT_FALLBACK_BEHAVIOR_LIMIT=10
    
    # Profile Assignment Algorithm Parameters
    MIN_PROMPTS_COLD_START=3
@@ -187,21 +185,7 @@ predefined_profile_assignment/
 
 ### Health Check
 - **GET** `/` - Service health check
-
-### User Management
-- **POST** `/api/users/register` - Register new user
-- **POST** `/api/users/login` - User login (returns JWT)
-- **POST** `/api/users/oauth/google` - Google OAuth login
-- **POST** `/api/users/oauth/github/callback` - GitHub OAuth callback
-- **GET** `/api/users/{user_id}` - Get user details
-- **GET** `/api/users/` - List all users (paginated)
-- **PUT** `/api/users/{user_id}` - Update user
-- **DELETE** `/api/users/{user_id}` - Delete user
-- **POST** `/api/users/{user_id}/change-password` - Change password
-- **POST** `/api/users/{user_id}/suspend` - Suspend user account
-- **POST** `/api/users/{user_id}/activate` - Activate user account
-- **GET** `/api/users/{user_id}/fallback-profile` - Get fallback profile info
-- **POST** `/api/users/{user_id}/clear-fallback` - Clear fallback state
+- **GET** `/health` - Detailed health check with component status
 
 ### Profile Assignment
 - **GET** `/api/predefined-profiles/user/{user_id}` - Get profile assignment status
@@ -228,19 +212,11 @@ predefined_profile_assignment/
 
 ## 🔧 Usage Example
 
-### 1. Register a User
+### Prerequisites
+- User must exist in the User Management Service
+- User Management Service must be running and accessible
 
-```bash
-curl -X POST "http://localhost:8000/api/users/register" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "john_doe",
-    "email": "john@example.com",
-    "password": "SecurePassword123!"
-  }'
-```
-
-### 2. Assign Profile Based on Behavior
+### 1. Assign Profile Based on Behavior
 
 ```bash
 curl -X POST "http://localhost:8000/api/predefined-profiles/assign-profile" \
@@ -322,20 +298,20 @@ The service uses a sophisticated multi-factor scoring algorithm:
 
 - **Framework**: FastAPI 0.110.0
 - **Database**: PostgreSQL with SQLAlchemy 2.0.27 ORM
-- **Authentication**: JWT (PyJWT 2.8.0) + OAuth (Google, GitHub)
 - **Validation**: Pydantic 2.5.0
 - **Server**: Uvicorn 0.27.1
-- **Password Hashing**: bcrypt 4.1.2
-- **HTTP Client**: httpx 0.27.0
+- **HTTP Client**: httpx 0.27.0 (for external service communication)
+- **Message Broker**: Redis 5.0.1 (for event streaming)
 
 ## 📊 Database Schema
 
 ### Core Tables
 
 - **profile** - Predefined behavioral profiles
-- **user** - User accounts with profile assignments
-- **user_profile_ranking_state** - Temporal profile-user matching scores
-- **user_domain_state** - User expertise tracking per domain
+- **user_profile_ranking_state** - Temporal profile-user matching scores (references external user_id)
+- **user_domain_state** - User expertise tracking per domain (references external user_id)
+
+**Note**: User data is managed by the external User Management Service
 
 ### Reference Tables
 

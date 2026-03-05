@@ -3,12 +3,15 @@
 Coordinates profile matching, ranking state management, and assignment decisions
 for both cold-start and drift-fallback scenarios."""
 
+import logging
 from app.services.profile_matcher import ProfileMatcher
 from app.services.consistency_calculator import ConsistencyCalculator
 from app.repositories.predefined_profile_repo import PredefinedProfileRepository
 from app.services.ranking_state_service import RankingStateService
-from app.repositories.user_repo import UserRepository
+from app.services.user_management_client import UserManagementClient
 from typing import Optional, Tuple, Union, List
+
+logger = logging.getLogger(__name__)
 
 
 class ProfileAssigner:
@@ -20,7 +23,7 @@ class ProfileAssigner:
     Attributes:
         repo: Predefined profile repository
         ranking_service: Ranking state service
-        user_repo: User repository
+        user_client: User Management Service HTTP client
         db: Database session
     """
 
@@ -32,7 +35,7 @@ class ProfileAssigner:
         """
         self.repo = PredefinedProfileRepository(db)
         self.ranking_service = RankingStateService(db)
-        self.user_repo = UserRepository(db)
+        self.user_client = UserManagementClient()
         self.db = db
 
     def get_assignment_status(self, user_id: str) -> dict:
@@ -53,9 +56,9 @@ class ProfileAssigner:
                 - assigned_profile_id: Currently assigned profile or None
                 - aggregated_rankings: List of all profile ranking states
         """
-        # Get user to check assigned profile
-        user = self.user_repo.get_user_by_id(user_id)
-        if not user:
+        # Get user data from User Management Service
+        user_data = self.user_client.get_user_profile_sync(user_id)
+        if not user_data:
             return {
                 "status": "NOT_FOUND",
                 "confidence_level": "NONE",
@@ -76,18 +79,36 @@ class ProfileAssigner:
         prompt_count = aggregated_states[0].observation_count if aggregated_states else 0
         
         # Check if user has assigned profile
-        assigned_profile_id = user.predefined_profile_id if user else None
+        assigned_profile_id = user_data.get("predefined_profile_id")
         
-        # Get user mode from user database (profile_mode field)
-        user_mode = user.profile_mode.value
+        # Get user mode from user data
+        user_mode = user_data.get("profile_mode", "COLD_START")
         
-        # Determine status and confidence level
+        # Determine status and confidence level using dominance ratio
         if assigned_profile_id:
             status = "ASSIGNED"
-            # Get confidence from top profile's average score
-            if aggregated_states:
+            # Calculate confidence based on dominance ratio
+            if aggregated_states and len(aggregated_states) >= 2:
                 top_score = aggregated_states[0].average_score
-                confidence_level = "HIGH" if top_score >= 0.70 else "MEDIUM"
+                second_score = aggregated_states[1].average_score
+                consecutive = aggregated_states[0].consecutive_top_count
+                
+                # Calculate dominance ratio
+                if second_score == 0:
+                    dominance_ratio = float('inf')
+                else:
+                    dominance_ratio = top_score / second_score
+                
+                # Apply same three-tier logic as should_assign_profile
+                if dominance_ratio >= 1.5 and consecutive >= 3:
+                    confidence_level = "HIGH"
+                elif dominance_ratio >= 1.2 and consecutive >= 5:
+                    confidence_level = "MEDIUM"
+                else:
+                    confidence_level = "LOW"
+            elif aggregated_states and len(aggregated_states) == 1:
+                # Only one profile exists, assign HIGH if it has consistency
+                confidence_level = "HIGH" if aggregated_states[0].consecutive_top_count >= 3 else "MEDIUM"
             else:
                 confidence_level = "MEDIUM"
         else:
@@ -123,44 +144,91 @@ class ProfileAssigner:
         self,
         user_id: str,
         user_mode: str = 'COLD_START',
-        min_prompts: int = 3,
-        cold_threshold: float = 0.60,
-        fallback_threshold: float = 0.70
-    ) -> Tuple[bool, Optional[str], float]:
-        """Determine if profile should be assigned based on ranking state.
+        min_prompts: int = 3
+    ) -> Tuple[bool, Optional[str], str, float]:
+        """Determine if profile should be assigned based on dominance ratio.
         
-        Applies different criteria for cold-start vs drift-fallback scenarios:
-        - Cold-start: requires min_prompts, cold_threshold, and 2+ consecutive tops
-        - Drift-fallback: requires fallback_threshold and 3+ consecutive tops
+        Uses dominance ratio (top_score / second_score) instead of absolute thresholds
+        to detect when a profile is genuinely dominant vs. tied with another.
+        
+        Three-tier confidence system:
+        - HIGH: dominance_ratio >= 1.5 AND consecutive >= 3
+        - MEDIUM: dominance_ratio >= 1.2 AND consecutive >= 5
+        - LOW/PENDING: dominance_ratio < 1.2 (genuine tie, wait for more data)
         
         Args:
             user_id: User unique identifier
             user_mode: Assignment mode (COLD_START or DRIFT_FALLBACK)
             min_prompts: Minimum observations required for cold-start
-            cold_threshold: Average score threshold for cold-start (default 0.60)
-            fallback_threshold: Average score threshold for drift-fallback (default 0.70)
             
         Returns:
-            Tuple of (should_assign, profile_id, average_score)
+            Tuple of (should_assign, profile_id, confidence_level, dominance_ratio)
         """
-        top_states = self.ranking_service.get_top_profiles_for_user(user_id, limit=1)
+        # Get top 2 profiles to calculate dominance ratio
+        top_states = self.ranking_service.get_top_profiles_for_user(user_id, limit=2)
         if not top_states:
-            return False, None, 0.0
+            return False, None, "NONE", 0.0
 
-        best = top_states[0]
-
+        top_state = top_states[0]
+        
+        # Check minimum prompts for cold-start
         if user_mode == 'COLD_START':
-            if best.observation_count < min_prompts:
-                return False, None, best.average_score
-
-            if best.average_score >= cold_threshold and best.consecutive_top_count >= 2:
-                return True, best.profile_id, best.average_score
-
-        elif user_mode == 'DRIFT_FALLBACK':
-            if best.average_score >= fallback_threshold and best.consecutive_top_count >= 3:
-                return True, best.profile_id, best.average_score
-
-        return False, None, best.average_score
+            if top_state.observation_count < min_prompts:
+                return False, None, "LOW", 0.0
+        
+        # If there's no second profile, top profile wins by default
+        if len(top_states) < 2:
+            # Still require some consistency
+            if top_state.consecutive_top_count >= 3:
+                return True, top_state.profile_id, "HIGH", float('inf')
+            else:
+                return False, None, "LOW", float('inf')
+        
+        second_state = top_states[1]
+        
+        # Calculate dominance ratio
+        # Avoid division by zero
+        if second_state.average_score == 0:
+            dominance_ratio = float('inf')
+        else:
+            dominance_ratio = top_state.average_score / second_state.average_score
+        
+        consecutive = top_state.consecutive_top_count
+        
+        # Three-tier confidence system
+        if dominance_ratio >= 1.5 and consecutive >= 3:
+            # Clear winner — assign with HIGH confidence
+            logger.info(
+                f"HIGH confidence assignment: {top_state.profile_id} (ratio={dominance_ratio:.2f}, "
+                f"consecutive={consecutive}, score={top_state.average_score:.3f})"
+            )
+            return True, top_state.profile_id, "HIGH", dominance_ratio
+        
+        elif dominance_ratio >= 1.2 and consecutive >= 5:
+            # Soft winner — needs more consistency to confirm
+            # Allow assignment but flag as MEDIUM confidence
+            logger.info(
+                f"MEDIUM confidence assignment: {top_state.profile_id} (ratio={dominance_ratio:.2f}, "
+                f"consecutive={consecutive}, score={top_state.average_score:.3f})"
+            )
+            return True, top_state.profile_id, "MEDIUM", dominance_ratio
+        
+        elif dominance_ratio < 1.2:
+            # Genuine tie — do not assign, wait for signal to separate
+            # Log which two profiles are competing for debugging
+            logger.info(
+                f"Tie detected: {top_state.profile_id} vs {second_state.profile_id}, "
+                f"ratio={dominance_ratio:.2f} (scores: {top_state.average_score:.3f} vs "
+                f"{second_state.average_score:.3f}, consecutive={consecutive})"
+            )
+            return False, None, "LOW", dominance_ratio
+        
+        # Fallback: ratio between 1.2 and 1.5 but not enough consecutive
+        logger.info(
+            f"Insufficient consistency: {top_state.profile_id} (ratio={dominance_ratio:.2f}, "
+            f"consecutive={consecutive}, needs 3 for HIGH or 5 for MEDIUM)"
+        )
+        return False, None, "LOW", dominance_ratio
 
     def assign(
         self, 
@@ -196,12 +264,12 @@ class ProfileAssigner:
         Raises:
             ValueError: If user not found or behavior format invalid for user mode
         """
-        # Fetch user and get their current mode from database
-        user = self.user_repo.get_user_by_id(user_id)
-        if not user:
-            raise ValueError(f"User with ID {user_id} not found")
+        # Get user data from User Management Service
+        user_data = self.user_client.get_user_profile_sync(user_id)
+        if not user_data:
+            raise ValueError(f"User with ID {user_id} not found in User Management Service")
         
-        user_mode = user.profile_mode.value
+        user_mode = user_data.get("profile_mode", "COLD_START")
         
         # Validate behavior format based on user_mode from database
         if user_mode == 'DRIFT_FALLBACK':
@@ -292,35 +360,33 @@ class ProfileAssigner:
             limit=1000
         )
 
-        # Determine if assignment should happen
+        # Determine if assignment should happen based on dominance ratio
         min_prompts = 5 if user_mode == 'COLD_START' else 3
-        cold_threshold = 0.60
-        fallback_threshold = 0.70
         
-        should_assign, assigned_profile_id, avg_score = self.should_assign_profile(
+        should_assign, assigned_profile_id, confidence_level, dominance_ratio = self.should_assign_profile(
             user_id=user_id,
             user_mode=user_mode,
-            min_prompts=min_prompts,
-            cold_threshold=cold_threshold,
-            fallback_threshold=fallback_threshold
+            min_prompts=min_prompts
         )
 
-        # Determine status and confidence level
+        # Determine status
         if should_assign:
             status = "ASSIGNED"
-            confidence_level = "HIGH" if avg_score >= 0.70 else "MEDIUM"
             
-            # Persist assignment to user table
+            # Persist assignment to User Management Service
             try:
-                self.user_repo.update_user(
+                success = self.user_client.update_user_profile_sync(
                     user_id=user_id,
                     predefined_profile_id=assigned_profile_id
                 )
+                if not success:
+                    logger.warning(
+                        f"Failed to update user profile assignment in User Management Service for user {user_id}"
+                    )
             except Exception as e:
-                print(f"Warning: Failed to update user profile assignment: {e}")
+                logger.warning(f"Failed to update user profile assignment for user {user_id}: {e}")
         else:
             status = "PENDING"
-            confidence_level = "LOW"
 
         # Build aggregated rankings list
         aggregated_rankings = [

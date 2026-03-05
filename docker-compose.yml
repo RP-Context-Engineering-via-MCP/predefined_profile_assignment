@@ -19,6 +19,8 @@ services:
       - REDIS_URL=redis://shared-redis:6379/0
       # Behavior Resolution Service - using container name on shared network
       - BEHAVIOR_RESOLUTION_BASE_URL=http://behavior-extraction-engine:8001
+      # User Management Service - using container name on shared network
+      - USER_MANAGEMENT_SERVICE_URL=http://user-management-service:8080
       - DEBUG=false
       - LOG_LEVEL=INFO
     networks:

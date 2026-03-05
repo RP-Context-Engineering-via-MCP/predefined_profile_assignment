@@ -31,21 +31,21 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     
-    # JWT Authentication
-    JWT_SECRET_KEY: str = "your-secret-key-change-this-in-production"
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
-    # OAuth Providers
-    GITHUB_CLIENT_ID: Optional[str] = None
-    GITHUB_CLIENT_SECRET: Optional[str] = None
-    
     # Redis Configuration (use /3 for shared Redis in Docker)
     REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # Redis Stream Configuration
+    BEHAVIOUR_STREAM_NAME: str = "behaviour.event"
+    DRIFT_STREAM_NAME: str = "drift.events"
+    
+    # Redis Consumer Group Configuration
+    PROFILE_SERVICE_CONSUMER_GROUP: str = "profile-service-group"
+    PROFILE_SERVICE_DRIFT_CONSUMER_GROUP: str = "profile-service-drift-group"
     
     # External Services
     BEHAVIOR_RESOLUTION_BASE_URL: str = "http://localhost:8001"
     DRIFT_FALLBACK_BEHAVIOR_LIMIT: int = 10
+    USER_MANAGEMENT_SERVICE_URL: str = "http://user-management-service:8080"
     
     # Profile Assignment Thresholds
     MIN_PROMPTS_COLD_START: int = 3

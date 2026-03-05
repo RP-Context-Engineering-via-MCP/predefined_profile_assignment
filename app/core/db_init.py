@@ -22,7 +22,6 @@ from app.models import (
     profile_behavior_signal,
     standard_matching_factor,
     cold_start_matching_factor,
-    user,
     user_profile_ranking_state,
     output_preference,
     interaction_tone,
