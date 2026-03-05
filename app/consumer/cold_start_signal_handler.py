@@ -50,6 +50,7 @@ class ColdStartSignalHandler:
             event: Profile signal event dict with shape:
                 {
                     "user_id": "user_123",
+                    "prompt_id": "segment_abc456",
                     "profile_signals": {
                         "intents": {
                             "LEARNING": 0.8,
@@ -73,6 +74,7 @@ class ColdStartSignalHandler:
                 
                 Fields:
                 - user_id: Required to identify the user for profile assignment.
+                - prompt_id: Traceability ID for logging and correlation.
                 - profile_signals: Extracted behavioral signals containing:
                   * intents: Dict of intent types with confidence scores
                   * interests: Dict of interest areas with confidence scores
@@ -82,6 +84,7 @@ class ColdStartSignalHandler:
                   * consistency: Consistency score (0-1)
         """
         user_id = event.get("user_id")
+        prompt_id = event.get("prompt_id")
         profile_signals = event.get("profile_signals")
 
         if not user_id:
@@ -95,7 +98,7 @@ class ColdStartSignalHandler:
             return
 
         logger.info(
-            f"✅ Processing cold start signal: user={user_id}"
+            f"✅ Processing cold start signal: user={user_id}, prompt_id={prompt_id}"
         )
 
         # Validate profile_signals structure
@@ -127,7 +130,7 @@ class ColdStartSignalHandler:
                 user_id=user_id,
                 mode="COLD_START",
                 extracted_behavior=profile_signals,
-                trigger_event_id=None
+                trigger_event_id=prompt_id
             )
 
             logger.info(

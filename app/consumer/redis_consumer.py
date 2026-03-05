@@ -15,9 +15,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-STREAM_NAME = "drift.events"
-GROUP_NAME = "predefined-profile-service"
-CONSUMER_NAME = "profile-worker-1"
+CONSUMER_NAME = "drift-worker-1"
 BLOCK_MS = 5000      # Block 5 seconds waiting for messages
 MAX_MESSAGES = 10    # Read up to 10 messages at a time
 
@@ -56,7 +54,7 @@ class DriftEventConsumer:
         3. Acknowledges successfully processed messages
         4. Leaves failed messages in PEL for retry
         """
-        logger.info(f"Starting DriftEventConsumer for stream: {STREAM_NAME}")
+        logger.info(f"Starting DriftEventConsumer for stream: {settings.DRIFT_STREAM_NAME}")
         
         self._redis = await aioredis.from_url(
             settings.REDIS_URL,
@@ -68,15 +66,15 @@ class DriftEventConsumer:
         while self._running:
             try:
                 messages = await self._redis.xreadgroup(
-                    groupname=GROUP_NAME,
+                    groupname=settings.PROFILE_SERVICE_DRIFT_CONSUMER_GROUP,
                     consumername=CONSUMER_NAME,
-                    streams={STREAM_NAME: ">"},
+                    streams={settings.DRIFT_STREAM_NAME: ">"},
                     count=MAX_MESSAGES,
                     block=BLOCK_MS
                 )
                 
                 if messages:
-                    logger.info(f"Received {sum(len(entries) for _, entries in messages)} message(s) from {STREAM_NAME}")
+                    logger.info(f"Received {sum(len(entries) for _, entries in messages)} message(s) from {settings.DRIFT_STREAM_NAME}")
                     for stream_name, entries in messages:
                         for entry_id, data in entries:
                             logger.info(f"📥 Consuming event: stream={stream_name}, entry_id={entry_id}")
@@ -109,13 +107,13 @@ class DriftEventConsumer:
             await self._handler.handle(event_payload)
             
             # Acknowledge successful processing
-            await self._redis.xack(STREAM_NAME, GROUP_NAME, entry_id)
+            await self._redis.xack(settings.DRIFT_STREAM_NAME, settings.PROFILE_SERVICE_DRIFT_CONSUMER_GROUP, entry_id)
             logger.debug(f"Acknowledged drift event: {entry_id}")
             
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in drift event {entry_id}: {e}")
             # Ack malformed messages to prevent infinite retry
-            await self._redis.xack(STREAM_NAME, GROUP_NAME, entry_id)
+            await self._redis.xack(settings.DRIFT_STREAM_NAME, settings.PROFILE_SERVICE_DRIFT_CONSUMER_GROUP, entry_id)
         except Exception as e:
             logger.error(f"Failed to process drift event {entry_id}: {e}")
             # Do NOT ack - message stays in PEL for retry
@@ -128,15 +126,15 @@ class DriftEventConsumer:
         """
         try:
             await self._redis.xgroup_create(
-                STREAM_NAME,
-                GROUP_NAME,
+                settings.DRIFT_STREAM_NAME,
+                settings.PROFILE_SERVICE_DRIFT_CONSUMER_GROUP,
                 id="0",
                 mkstream=True
             )
-            logger.info(f"Created consumer group: {GROUP_NAME}")
+            logger.info(f"Created consumer group: {settings.PROFILE_SERVICE_DRIFT_CONSUMER_GROUP}")
         except aioredis.ResponseError as e:
             if "BUSYGROUP" in str(e):
-                logger.debug(f"Consumer group already exists: {GROUP_NAME}")
+                logger.debug(f"Consumer group already exists: {settings.PROFILE_SERVICE_DRIFT_CONSUMER_GROUP}")
             else:
                 raise
 

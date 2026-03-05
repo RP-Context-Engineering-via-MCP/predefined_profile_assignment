@@ -110,12 +110,25 @@ class DriftEventHandler:
             )
             return
 
+        # Validate and transform behaviors to expected format
+        validated_behaviors = self._validate_and_transform_behaviors(behaviors)
+        if not validated_behaviors:
+            logger.warning(
+                f"No valid behaviors after validation for user {user_id}, "
+                f"skipping drift fallback"
+            )
+            return
+
+        logger.info(
+            f"✅ Validated {len(validated_behaviors)} behaviors for drift fallback processing"
+        )
+
         # Hand off to orchestrator in DRIFT_FALLBACK mode
         orchestrator = self._get_orchestrator()
         result = await orchestrator.process(
             user_id=user_id,
             mode="DRIFT_FALLBACK",
-            extracted_behavior=behaviors,
+            extracted_behavior=validated_behaviors,
             trigger_event_id=drift_event_id
         )
 
@@ -263,4 +276,113 @@ class DriftEventHandler:
             logger.error(
                 f"Failed to fetch behaviors for user {user_id}: {e}"
             )
+            return None
+
+    def _validate_and_transform_behaviors(
+        self,
+        behaviors: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Validate and transform behaviors to expected format.
+        
+        Ensures each behavior has required fields: intents, interests,
+        behavior_level, signals, complexity, and consistency.
+        
+        If behaviors don't have the expected structure, attempts to extract
+        or default the values to prevent processing failures.
+        
+        Args:
+            behaviors: Raw behaviors from Behavior Resolution Service
+            
+        Returns:
+            List of validated/transformed behaviors with required fields.
+            Behaviors that cannot be transformed are logged and skipped.
+        """
+        from app.core.constants import DefaultValues
+        
+        required_fields = ["intents", "interests", "behavior_level", "signals"]
+        validated = []
+        
+        for idx, behavior in enumerate(behaviors):
+            # Log first behavior structure for debugging (only once)
+            if idx == 0:
+                logger.info(
+                    f"📋 Sample behavior structure: keys={list(behavior.keys())[:15]}"
+                )
+            
+            # Check if behavior is already in correct format
+            missing_fields = [field for field in required_fields if field not in behavior]
+            
+            if missing_fields:
+                # Log detailed info for the first few failures
+                if idx < 3:
+                    logger.warning(
+                        f"⚠️ Behavior {idx + 1}/{len(behaviors)} missing required fields: {missing_fields}. "
+                        f"Available keys: {list(behavior.keys())}"
+                    )
+                    # Log a sample of the actual content
+                    sample_keys = list(behavior.keys())[:5]
+                    sample_content = {k: behavior.get(k) for k in sample_keys}
+                    logger.warning(f"Sample content: {sample_content}")
+                
+                # Attempt to construct default behavior structure
+                transformed_behavior = self._attempt_behavior_transformation(behavior)
+                if transformed_behavior:
+                    logger.info(f"✓ Transformed behavior {idx + 1} to expected format")
+                    validated.append(transformed_behavior)
+                else:
+                    logger.warning(f"✗ Skipping behavior {idx + 1} - cannot transform")
+                continue
+            
+            # Ensure optional fields have defaults
+            if "complexity" not in behavior:
+                behavior["complexity"] = DefaultValues.DEFAULT_COMPLEXITY
+            
+            if "consistency" not in behavior:
+                behavior["consistency"] = DefaultValues.DEFAULT_CONSISTENCY
+            
+            validated.append(behavior)
+        
+        logger.info(
+            f"Validation complete: {len(validated)}/{len(behaviors)} behaviors valid"
+        )
+        
+        return validated
+
+    def _attempt_behavior_transformation(
+        self,
+        behavior: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Attempt to transform a raw behavior into expected format.
+        
+        Tries to extract or default missing fields to salvage behaviors
+        that don't match the expected structure from Behavior Resolution Service.
+        
+        Args:
+            behavior: Raw behavior dict
+            
+        Returns:
+            Transformed behavior dict with required fields, or None if transformation fails
+        """
+        from app.core.constants import DefaultValues
+        
+        try:
+            # Create a new behavior dict with default values
+            transformed = {
+                "intents": behavior.get("intents", {}),
+                "interests": behavior.get("interests", {}),
+                "behavior_level": behavior.get("behavior_level", "BASIC"),
+                "signals": behavior.get("signals", {}),
+                "complexity": behavior.get("complexity", DefaultValues.DEFAULT_COMPLEXITY),
+                "consistency": behavior.get("consistency", DefaultValues.DEFAULT_CONSISTENCY)
+            }
+            
+            # Validate that critical fields are not empty
+            if not transformed["intents"] and not transformed["interests"]:
+                logger.debug("Transformation failed: no intents or interests")
+                return None
+            
+            return transformed
+            
+        except Exception as e:
+            logger.error(f"Error during behavior transformation: {e}")
             return None

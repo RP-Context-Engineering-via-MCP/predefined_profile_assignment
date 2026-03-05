@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # Redis Configuration (use /3 for shared Redis in Docker)
     REDIS_URL: str = "redis://localhost:6379/0"
     
+    # Redis Stream Configuration
+    BEHAVIOUR_STREAM_NAME: str = "behaviour.event"
+    DRIFT_STREAM_NAME: str = "drift.events"
+    
+    # Redis Consumer Group Configuration
+    PROFILE_SERVICE_CONSUMER_GROUP: str = "profile-service-group"
+    PROFILE_SERVICE_DRIFT_CONSUMER_GROUP: str = "profile-service-drift-group"
+    
     # External Services
     BEHAVIOR_RESOLUTION_BASE_URL: str = "http://localhost:8001"
     DRIFT_FALLBACK_BEHAVIOR_LIMIT: int = 10
