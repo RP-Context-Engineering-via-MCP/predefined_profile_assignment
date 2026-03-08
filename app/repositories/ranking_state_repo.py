@@ -464,9 +464,7 @@ class RankingStateRepository:
                         observation_count=1,
                         last_rank=rank,
                         consecutive_top_count=1 if rank == 1 else 0,
-                        consecutive_drop_count=0,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
+                        consecutive_drop_count=0
                     )
                     self.db.add(state)
                 else:
@@ -500,3 +498,100 @@ class RankingStateRepository:
         except Exception as e:
             self.db.rollback()
             raise ValueError(f"Failed to batch add observations: {str(e)}")
+
+    def add_multi_prompt_observations_batch(
+        self,
+        user_id: str,
+        all_ranked_profiles: List[List[Tuple[str, float]]]
+    ) -> List[UserProfileRankingState]:
+        """Batch add observations for multiple prompts with a single commit.
+        
+        Optimized for DRIFT_FALLBACK mode where multiple prompts need to be
+        processed together. Instead of committing after each prompt's observations,
+        this method:
+        1. Pre-fetches all existing states for the user (single query)
+        2. Aggregates observations across all prompts
+        3. Performs a single commit at the end
+        
+        This reduces N_prompts * N_profiles queries to ~N_profiles + 1 queries
+        and N_prompts commits to a single commit.
+        
+        Args:
+            user_id: User unique identifier
+            all_ranked_profiles: List of ranked_profiles lists, one per prompt.
+                Each item is [(profile_id, score), ...] sorted by score descending.
+            
+        Returns:
+            List of updated UserProfileRankingState objects
+            
+        Raises:
+            ValueError: If batch operation fails
+        """
+        if not all_ranked_profiles:
+            return []
+        
+        try:
+            # Pre-fetch all existing states for this user in a single query
+            existing_states = self.db.query(UserProfileRankingState).filter(
+                UserProfileRankingState.user_id == user_id
+            ).all()
+            
+            # Create lookup dict for O(1) access
+            state_lookup = {state.profile_id: state for state in existing_states}
+            
+            # Track new states that need to be added
+            new_states = {}
+            
+            # Process each prompt's ranked profiles
+            for ranked_profiles in all_ranked_profiles:
+                for rank, (profile_id, new_score) in enumerate(ranked_profiles, start=1):
+                    state = state_lookup.get(profile_id) or new_states.get(profile_id)
+                    
+                    if not state:
+                        # Create new state if doesn't exist
+                        state = UserProfileRankingState(
+                            id=str(uuid.uuid4()),
+                            user_id=user_id,
+                            profile_id=profile_id,
+                            cumulative_score=new_score,
+                            average_score=new_score,
+                            max_score=new_score,
+                            observation_count=1,
+                            last_rank=rank,
+                            consecutive_top_count=1 if rank == 1 else 0,
+                            consecutive_drop_count=0
+                        )
+                        self.db.add(state)
+                        new_states[profile_id] = state
+                    else:
+                        # Update existing state
+                        state.observation_count += 1
+                        state.cumulative_score += new_score
+                        state.average_score = state.cumulative_score / state.observation_count
+                        state.max_score = max(state.max_score, new_score)
+                        
+                        # Update drift counters
+                        if rank == 1:
+                            state.consecutive_top_count += 1
+                            state.consecutive_drop_count = 0
+                        else:
+                            state.consecutive_drop_count += 1
+                            state.consecutive_top_count = 0
+                        
+                        state.last_rank = rank
+                        state.updated_at = datetime.utcnow()
+            
+            # Single commit for all updates across all prompts
+            self.db.commit()
+            
+            # Collect all updated states
+            all_states = list(state_lookup.values()) + list(new_states.values())
+            
+            # Refresh all states to get updated values
+            for state in all_states:
+                self.db.refresh(state)
+            
+            return all_states
+        except Exception as e:
+            self.db.rollback()
+            raise ValueError(f"Failed to batch add multi-prompt observations: {str(e)}")
