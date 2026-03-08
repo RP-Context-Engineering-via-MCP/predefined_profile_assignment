@@ -425,3 +425,78 @@ class RankingStateRepository:
         except Exception as e:
             self.db.rollback()
             raise ValueError(f"Failed to reset drift counters: {str(e)}")
+
+    def add_observations_batch(
+        self,
+        user_id: str,
+        ranked_profiles: List[Tuple[str, float]]
+    ) -> List[UserProfileRankingState]:
+        """Batch add observations for multiple profiles without intermediate commits.
+        
+        Optimized version that collects all updates and commits once at the end.
+        Reduces database transaction overhead for bulk profile updates.
+        
+        Args:
+            user_id: User unique identifier
+            ranked_profiles: List of (profile_id, score) tuples with rank as position
+            
+        Returns:
+            List of updated UserProfileRankingState objects
+            
+        Raises:
+            ValueError: If batch operation fails
+        """
+        updated_states = []
+        
+        try:
+            for rank, (profile_id, new_score) in enumerate(ranked_profiles, start=1):
+                state = self.get_ranking_state_by_user_profile(user_id, profile_id)
+                
+                if not state:
+                    # Create new state if doesn't exist
+                    state = UserProfileRankingState(
+                        id=str(uuid.uuid4()),
+                        user_id=user_id,
+                        profile_id=profile_id,
+                        cumulative_score=new_score,
+                        average_score=new_score,
+                        max_score=new_score,
+                        observation_count=1,
+                        last_rank=rank,
+                        consecutive_top_count=1 if rank == 1 else 0,
+                        consecutive_drop_count=0,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    self.db.add(state)
+                else:
+                    # Update existing state
+                    state.observation_count += 1
+                    state.cumulative_score += new_score
+                    state.average_score = state.cumulative_score / state.observation_count
+                    state.max_score = max(state.max_score, new_score)
+                    
+                    # Update drift counters
+                    if rank == 1:
+                        state.consecutive_top_count += 1
+                        state.consecutive_drop_count = 0
+                    else:
+                        state.consecutive_drop_count += 1
+                        state.consecutive_top_count = 0
+                    
+                    state.last_rank = rank
+                    state.updated_at = datetime.utcnow()
+                
+                updated_states.append(state)
+            
+            # Single commit for all updates
+            self.db.commit()
+            
+            # Refresh all states to get updated values
+            for state in updated_states:
+                self.db.refresh(state)
+            
+            return updated_states
+        except Exception as e:
+            self.db.rollback()
+            raise ValueError(f"Failed to batch add observations: {str(e)}")

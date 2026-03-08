@@ -189,21 +189,26 @@ class RankingStateService:
         Returns:
             List of updated ranking states
         """
-        updated_states = []
+        # Use the new batch method from repo for single commit
+        return self.repo.add_observations_batch(user_id, ranked_profiles)
+
+    def update_from_ranked_profiles_batch(
+        self,
+        user_id: str,
+        ranked_profiles: List[Tuple[str, float]]
+    ) -> List[UserProfileRankingState]:
+        """Alias for update_from_ranked_profiles for backward compatibility.
         
-        for rank, (profile_id, score) in enumerate(ranked_profiles, start=1):
-            try:
-                state = self.repo.add_observation(
-                    user_id=user_id,
-                    profile_id=profile_id,
-                    new_score=score,
-                    new_rank=rank
-                )
-                updated_states.append(state)
-            except Exception as e:
-                print(f"Error adding observation for profile {profile_id}: {e}")
+        This method is optimized for batch processing with a single commit.
         
-        return updated_states
+        Args:
+            user_id: User unique identifier
+            ranked_profiles: List of (profile_id, score) tuples sorted descending by score
+            
+        Returns:
+            List of updated ranking states
+        """
+        return self.update_from_ranked_profiles(user_id, ranked_profiles)
 
     def get_top_profiles_for_user(
         self,
@@ -417,7 +422,10 @@ class RankingStateService:
         user_id: str,
         observations: List[dict]
     ) -> List[UserProfileRankingState]:
-        """Add multiple observations in batch.
+        """Add multiple observations in batch with single commit.
+        
+        Optimized batch operation that collects all updates and commits once.
+        Significantly faster than individual updates.
         
         Args:
             user_id: User unique identifier
@@ -426,21 +434,13 @@ class RankingStateService:
         Returns:
             List of updated ranking states
         """
-        updated_states = []
+        # Convert to tuples format expected by repo method
+        ranked_profiles = [
+            (obs['profile_id'], obs['score']) 
+            for obs in observations
+        ]
         
-        for obs in observations:
-            try:
-                state = self.repo.add_observation(
-                    user_id=user_id,
-                    profile_id=obs['profile_id'],
-                    new_score=obs['score'],
-                    new_rank=obs['rank']
-                )
-                updated_states.append(state)
-            except Exception as e:
-                print(f"Error adding observation for profile {obs['profile_id']}: {e}")
-        
-        return updated_states
+        return self.repo.add_observations_batch(user_id, ranked_profiles)
 
     def compare_profiles(
         self,
