@@ -42,7 +42,8 @@ class ProfileMatcher:
         self,
         profiles: List[Profile],
         extracted_behavior: Dict,
-        is_cold_start: bool = False
+        is_cold_start: bool = False,
+        verbose: bool = False
     ) -> Dict:
         """Match user behavior against profiles and return ranked results.
         
@@ -59,6 +60,7 @@ class ProfileMatcher:
                 - consistency: float (0-1)
                 - complexity: float (0-1)
             is_cold_start: If True, uses simplified weights (intent + interest only)
+            verbose: If True, logs detailed scoring info; if False, minimal logging
             
         Returns:
             Dictionary with:
@@ -69,33 +71,35 @@ class ProfileMatcher:
         
         active_weights = self.cold_start_weights if is_cold_start else self.weights
         
-        matcher_logger.info(
-            f"Starting profile matching (cold_start={is_cold_start}) "
-            f"for {len(profiles)} profiles"
-        )
+        if verbose:
+            matcher_logger.info(
+                f"Starting profile matching (cold_start={is_cold_start}) "
+                f"for {len(profiles)} profiles"
+            )
 
         scores = {}
 
         for profile in profiles:
-            score = self._calculate_profile_score(profile, extracted_behavior, active_weights)
+            score = self._calculate_profile_score(profile, extracted_behavior, active_weights, verbose=verbose)
             scores[profile.profile_id] = score
 
         
         total = sum(scores.values()) or 1.0
         
-        if total == 0:
+        if total == 0 and verbose:
             matcher_logger.warning(
                 "All raw scores are 0; check that seeds and input codes match"
             )
         else:
-            matcher_logger.debug(f"Total raw score sum: {total:.3f}")
+            if verbose:
+                matcher_logger.debug(f"Total raw score sum: {total:.3f}")
         
         scores = {k: v / total for k, v in scores.items()}
         
-        
-        matcher_logger.debug("Normalized scores:")
-        for pid, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
-            matcher_logger.debug(f"  {pid}: {score:.4f}")
+        if verbose:
+            matcher_logger.debug("Normalized scores:")
+            for pid, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+                matcher_logger.debug(f"  {pid}: {score:.4f}")
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
@@ -105,10 +109,11 @@ class ProfileMatcher:
             "confidence": ranked[0][1] if ranked else 0.0
         }
         
-        matcher_logger.info(
-            f"Matching complete. Best profile: {result['best_profile']} "
-            f"(confidence: {result['confidence']:.4f})"
-        )
+        if verbose:
+            matcher_logger.info(
+                f"Matching complete. Best profile: {result['best_profile']} "
+                f"(confidence: {result['confidence']:.4f})"
+            )
 
         return result
 
@@ -116,7 +121,8 @@ class ProfileMatcher:
         self, 
         profile: Profile, 
         behavior: Dict, 
-        weights: Dict
+        weights: Dict,
+        verbose: bool = False
     ) -> float:
         """Calculate weighted score for single profile.
         
@@ -126,6 +132,7 @@ class ProfileMatcher:
             profile: Profile object to score
             behavior: Extracted behavior dictionary
             weights: Factor weights to apply
+            verbose: If True, logs detailed scoring breakdown
             
         Returns:
             Raw weighted score for the profile
@@ -144,15 +151,16 @@ class ProfileMatcher:
             weights["CONSISTENCY"] * behavior["consistency"]
         )
         
-        matcher_logger.debug(
-            f"\nProfile {profile.profile_id} - {profile.profile_name}:\n"
-            f"  Intent: {intent_score:.3f} × {weights['INTENT']:.2f} = {weights['INTENT'] * intent_score:.3f}\n"
-            f"  Interest: {interest_score:.3f} × {weights['INTEREST']:.2f} = {weights['INTEREST'] * interest_score:.3f}\n"
-            f"  Complexity: {complexity_score:.3f} × {weights['COMPLEXITY']:.2f} = {weights['COMPLEXITY'] * complexity_score:.3f}\n"
-            f"  Signal: {signal_score:.3f} × {weights['STYLE']:.2f} = {weights['STYLE'] * signal_score:.3f}\n"
-            f"  Consistency: {behavior['consistency']:.3f} × {weights['CONSISTENCY']:.2f} = {weights['CONSISTENCY'] * behavior['consistency']:.3f}\n"
-            f"  Raw total: {raw_score:.3f}"
-        )
+        if verbose:
+            matcher_logger.debug(
+                f"\nProfile {profile.profile_id} - {profile.profile_name}:\n"
+                f"  Intent: {intent_score:.3f} × {weights['INTENT']:.2f} = {weights['INTENT'] * intent_score:.3f}\n"
+                f"  Interest: {interest_score:.3f} × {weights['INTEREST']:.2f} = {weights['INTEREST'] * interest_score:.3f}\n"
+                f"  Complexity: {complexity_score:.3f} × {weights['COMPLEXITY']:.2f} = {weights['COMPLEXITY'] * complexity_score:.3f}\n"
+                f"  Signal: {signal_score:.3f} × {weights['STYLE']:.2f} = {weights['STYLE'] * signal_score:.3f}\n"
+                f"  Consistency: {behavior['consistency']:.3f} × {weights['CONSISTENCY']:.2f} = {weights['CONSISTENCY'] * behavior['consistency']:.3f}\n"
+                f"  Raw total: {raw_score:.3f}"
+            )
         
         return raw_score
 

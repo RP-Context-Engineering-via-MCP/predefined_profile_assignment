@@ -309,7 +309,7 @@ class ProfileAssigner:
             else:
                 behavior_list = extracted_behavior
             
-            print(f"\n=== FALLBACK MODE: Processing {len(behavior_list)} prompts ===")
+            logger.info(f"DRIFT_FALLBACK: Processing {len(behavior_list)} prompts in batch")
             
             # Process each prompt in the list
             for idx, behavior in enumerate(behavior_list):
@@ -318,10 +318,12 @@ class ProfileAssigner:
                 # Fallback mode always uses full matching (not cold-start)
                 is_cold_start = False
                 
-                print(f"\n--- Processing prompt {idx + 1}/{len(behavior_list)} (Total count: {prompt_count}) ---")
+                # Reduce logging for batch operations - only log every 5 prompts or at boundaries
+                if idx % 5 == 0 or idx == len(behavior_list) - 1:
+                    logger.debug(f"Processing prompt {idx + 1}/{len(behavior_list)} (total: {prompt_count})")
                 
                 # Match profiles for this prompt
-                result = matcher.match(profiles, behavior, is_cold_start=is_cold_start)
+                result = matcher.match(profiles, behavior, is_cold_start=is_cold_start, verbose=False)
                 
                 # Update ranking state with this prompt's results
                 ranked_profiles = result["ranked_profiles"]
@@ -332,6 +334,7 @@ class ProfileAssigner:
             
             # Final prompt count after processing all prompts
             prompt_count = current_prompt_count + len(behavior_list)
+            logger.info(f"Batch processing complete: {len(behavior_list)} prompts, total: {prompt_count}")
             
         else:  # COLD_START mode
             # Single prompt processing
@@ -344,7 +347,7 @@ class ProfileAssigner:
             is_cold_start = prompt_count < 5
             
             # Match profiles for current prompt
-            result = matcher.match(profiles, extracted_behavior, is_cold_start=is_cold_start)
+            result = matcher.match(profiles, extracted_behavior, is_cold_start=is_cold_start, verbose=True)
             
             # Update ranking state with current prompt results
             ranked_profiles = result["ranked_profiles"]
