@@ -210,6 +210,31 @@ class RankingStateService:
         """
         return self.update_from_ranked_profiles(user_id, ranked_profiles)
 
+    def update_from_multi_prompt_ranked_profiles(
+        self,
+        user_id: str,
+        all_ranked_profiles: List[List[Tuple[str, float]]]
+    ) -> List[UserProfileRankingState]:
+        """Update ranking states from multiple prompts' ranked profiles in one transaction.
+        
+        Optimized for DRIFT_FALLBACK mode. Instead of calling update_from_ranked_profiles
+        for each prompt (which triggers N commits), this method:
+        1. Pre-fetches all user's existing states (1 query)
+        2. Iterates through all prompts' results in memory
+        3. Performs a single commit at the end
+        
+        Performance improvement: O(prompts * profiles) queries -> O(profiles) queries
+        
+        Args:
+            user_id: User unique identifier
+            all_ranked_profiles: List of ranked_profiles lists, one per prompt.
+                Each is a list of (profile_id, score) tuples sorted descending.
+            
+        Returns:
+            List of updated ranking states
+        """
+        return self.repo.add_multi_prompt_observations_batch(user_id, all_ranked_profiles)
+
     def get_top_profiles_for_user(
         self,
         user_id: str,

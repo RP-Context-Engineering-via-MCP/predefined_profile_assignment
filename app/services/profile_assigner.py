@@ -309,28 +309,28 @@ class ProfileAssigner:
             else:
                 behavior_list = extracted_behavior
             
-            logger.info(f"DRIFT_FALLBACK: Processing {len(behavior_list)} prompts in batch")
+            logger.info(f"DRIFT_FALLBACK: Processing {len(behavior_list)} prompts in optimized batch mode")
             
-            # Process each prompt in the list
+            # Collect all match results first (no DB operations)
+            all_ranked_profiles = []
+            
             for idx, behavior in enumerate(behavior_list):
-                prompt_count = current_prompt_count + idx + 1
-                
                 # Fallback mode always uses full matching (not cold-start)
                 is_cold_start = False
                 
-                # Reduce logging for batch operations - only log every 5 prompts or at boundaries
-                if idx % 5 == 0 or idx == len(behavior_list) - 1:
-                    logger.debug(f"Processing prompt {idx + 1}/{len(behavior_list)} (total: {prompt_count})")
+                # Reduce logging for batch operations - only log every 10 prompts or at boundaries
+                if idx % 10 == 0 or idx == len(behavior_list) - 1:
+                    logger.debug(f"Matching prompt {idx + 1}/{len(behavior_list)}")
                 
-                # Match profiles for this prompt
+                # Match profiles for this prompt (CPU-only, no DB)
                 result = matcher.match(profiles, behavior, is_cold_start=is_cold_start, verbose=False)
-                
-                # Update ranking state with this prompt's results
-                ranked_profiles = result["ranked_profiles"]
-                self.ranking_service.update_from_ranked_profiles(
-                    user_id=user_id,
-                    ranked_profiles=ranked_profiles
-                )
+                all_ranked_profiles.append(result["ranked_profiles"])
+            
+            # Single batch update for all prompts' observations
+            self.ranking_service.update_from_multi_prompt_ranked_profiles(
+                user_id=user_id,
+                all_ranked_profiles=all_ranked_profiles
+            )
             
             # Final prompt count after processing all prompts
             prompt_count = current_prompt_count + len(behavior_list)
